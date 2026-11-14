@@ -589,7 +589,7 @@ export function getDepartmentLabel(departmentId) {
   return DEPARTMENT_LABELS[departmentId] || departmentId || "Unassigned";
 }
 
-export default {
+const rolesConfig = {
   ROLE_CONFIGS,
   getRoleRoute,
   getRoleConfig,
@@ -598,3 +598,5 @@ export default {
   getIconForItem,
   getDepartmentLabel,
 };
+
+export default rolesConfig;

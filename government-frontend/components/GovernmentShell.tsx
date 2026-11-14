@@ -160,7 +160,7 @@ export function GovernmentShell({
       return urlTab;
     }
     return internalActiveItem;
-  }, [activeItem, searchParams, roleConfig]);
+  }, [activeItem, searchParams, roleConfig, internalActiveItem]);
 
   // Sync URL query param when the active item changes.
   useEffect(() => {
@@ -208,11 +208,11 @@ export function GovernmentShell({
     } finally {
       setNotificationsLoading(false);
     }
-  }, [sessionVersion]);
+  }, []);
 
   useEffect(() => {
     void loadNotifications();
-  }, [loadNotifications]);
+  }, [loadNotifications, sessionVersion]);
 
   const iconMap: Record<string, any> = {
     Dashboard: LayoutDashboard,

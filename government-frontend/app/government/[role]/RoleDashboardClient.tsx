@@ -50,27 +50,17 @@ type DashboardUser = {
 };
 
 function normalizeStatus(value: unknown): string {
-  const status = String(value || "SUBMITTED")
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_");
-  switch (status) {
-    case "PENDING":
-    case "SUBMITTED":
-      return "Pending";
-    case "UNDER_REVIEW":
-      return "Under Review";
-    case "IN_PROGRESS":
-      return "In Progress";
-    case "RESOLVED":
-      return "Resolved";
-    case "REJECTED":
-      return "Rejected";
-    case "ESCALATED":
-      return "Escalated";
-    default:
-      return "Pending";
-  }
+  const status = String(value || "SUBMITTED").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  const labels: Record<string, string> = {
+    PENDING: "Pending", SUBMITTED: "Pending", DRAFT: "Draft", UNDER_REVIEW: "Under Review",
+    NEEDS_MORE_INFO: "Needs More Info", VERIFIED: "Verified", ASSIGNED: "Assigned",
+    ACKNOWLEDGED: "Acknowledged", INSPECTION_IN_PROGRESS: "Inspection In Progress",
+    IN_PROGRESS: "In Progress", AWAITING_EXTERNAL_AGENCY: "Awaiting External Agency",
+    RESOLUTION_SUBMITTED: "Resolution Submitted", AWAITING_CITIZEN_VERIFICATION: "Awaiting Verification",
+    RESOLVED: "Resolved", CLOSED: "Closed", REOPENED: "Reopened", REJECTED: "Rejected",
+    ESCALATED: "Escalated", DUPLICATE: "Duplicate", CANCELLED: "Cancelled",
+  };
+  return labels[status] || status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
 function parseCoordinate(value: unknown): number | null {
@@ -182,10 +172,12 @@ export default function RoleDashboardClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-
-  if (!isValidRole(role)) {
-    return null;
-  }
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const sessionRole = String(sessionUser?.role || "").toUpperCase();
 
@@ -201,7 +193,7 @@ export default function RoleDashboardClient() {
     }
   }, [role, sessionRole, sessionUser, router]);
 
-  const user: DashboardUser | null = sessionUser
+  const user: DashboardUser | null = useMemo(() => sessionUser
     ? {
         id: sessionUser.id,
         name: sessionUser.name,
@@ -212,7 +204,7 @@ export default function RoleDashboardClient() {
         subCountyId: sessionUser.subCountyId ?? null,
         countyId: sessionUser.countyId ?? null,
       }
-    : null;
+    : null, [sessionUser]);
 
   const roleConfig = getRoleConfig(role);
   const urlTab = searchParams.get("tab");
@@ -272,7 +264,7 @@ export default function RoleDashboardClient() {
     try {
       const formData = new FormData();
       formData.append('image', file);
-      const res = await apiFetch('/api/upload-image', {
+      const res = await apiFetch('/api/uploads/upload-image', {
         method: 'POST',
         body: formData,
       });
@@ -302,7 +294,7 @@ export default function RoleDashboardClient() {
       };
       await apiFetch('/api/work-updates', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: payload,
       });
       closeWorkUpdateDialog();
       void loadWorkUpdates();
@@ -345,7 +337,7 @@ export default function RoleDashboardClient() {
       };
       await apiFetch('/api/escalations', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: payload,
       });
       closeEscalateDialog();
       void loadEscalations();
@@ -380,7 +372,7 @@ export default function RoleDashboardClient() {
       if (notes) payload.notes = notes;
       await apiFetch(`/api/reports/${dialogReport.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify(payload),
+        body: payload,
       });
       closeStatusDialog();
       // Refresh reports to reflect the status change
@@ -431,10 +423,10 @@ export default function RoleDashboardClient() {
     setShowAssignDialog(false);
   };
 
-  const loadAvailableOfficers = useCallback(async () => {
+  const loadAvailableOfficers = async () => {
     setOfficersLoading(true);
     try {
-      const res = await apiFetch('/api/users/officers', { cache: 'no-store' });
+      const res = await apiFetch('/api/officers', { cache: 'no-store' });
       const officers = res?.data?.officers ?? res?.data?.users ?? [];
       setAvailableOfficers(officers);
     } catch {
@@ -442,7 +434,7 @@ export default function RoleDashboardClient() {
     } finally {
       setOfficersLoading(false);
     }
-  }, []);
+  };
 
   const handleAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -459,7 +451,7 @@ export default function RoleDashboardClient() {
       if (reason) payload.reason = reason;
       await apiFetch('/api/assignments', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: payload,
       });
       closeAssignDialog();
       void loadReports();
@@ -521,7 +513,7 @@ export default function RoleDashboardClient() {
         ward: formData.get('ward') || undefined,
         departmentId: formData.get('departmentId') || undefined,
       };
-      await apiFetch('/api/users', { method: 'POST', body: JSON.stringify(payload) });
+      await apiFetch('/api/users', { method: 'POST', body: payload });
       setShowCreateUserDialog(false);
       void loadUsers();
     } catch (error) {
@@ -553,7 +545,7 @@ export default function RoleDashboardClient() {
       if (ward) payload.ward = ward;
       if (departmentId) payload.departmentId = departmentId;
       if (isActive !== undefined) payload.isActive = isActive === 'true';
-      await apiFetch(`/api/users/${editUser.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      await apiFetch(`/api/users/${editUser.id}`, { method: 'PUT', body: payload });
       closeEditUserDialog();
       void loadUsers();
     } catch (error) {
@@ -739,7 +731,7 @@ export default function RoleDashboardClient() {
     if (activeLower.includes("overdue")) {
       return reports.filter((r) => {
         if (["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status)) return false;
-        const ageDays = (Date.now() - new Date(r.createdAt).getTime()) / 86400000;
+        const ageDays = (now - new Date(r.createdAt).getTime()) / 86400000;
         return ageDays > 7;
       });
     }
@@ -772,7 +764,7 @@ export default function RoleDashboardClient() {
 
     // "all reports" variants — show everything
     return reports;
-  }, [reports, activeLower, user]);
+  }, [reports, activeLower, user, now]);
 
   // Derived datasets for dedicated pages (computed from already-loaded backend data).
   const reportsByDepartment = useMemo(() => {
@@ -850,7 +842,7 @@ export default function RoleDashboardClient() {
   const resolved = overview?.resolvedReports ?? reports.filter((r) => r.status === "Resolved").length;
   const overdue = overview?.overdueReports ?? reports.filter((r) => {
     if (["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status)) return false;
-    const ageDays = (Date.now() - new Date(r.createdAt).getTime()) / 86400000;
+    const ageDays = (now - new Date(r.createdAt).getTime()) / 86400000;
     return ageDays > 7;
   }).length;
   const escalated = overview?.openEscalations ?? 0;
@@ -899,7 +891,7 @@ export default function RoleDashboardClient() {
       { title: "Resolved", value: resolved, color: "text-[#187a58]" },
       { title: "Escalated", value: escalated, color: "text-[#66572f]" },
     ];
-  }, [overview, reports, role, user]);
+  }, [role, assignedToMe, escalated, open, overdue, resolutionRate, resolved, total]);
 
   const formatDate = (value: string): string => {
     if (!value || value === "Unknown date") return value || "Unknown date";
@@ -1386,7 +1378,7 @@ export default function RoleDashboardClient() {
                   const openCount = reports.filter((r) => !["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status)).length;
                   const overdueCount = reports.filter((r) => {
                     if (["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status)) return false;
-                    const ageDays = (Date.now() - new Date(r.createdAt).getTime()) / 86400000;
+                    const ageDays = (now - new Date(r.createdAt).getTime()) / 86400000;
                     return ageDays > 7;
                   }).length;
                   const escalatedCount = reports.filter((r) => r.status === "Escalated").length;
@@ -1884,7 +1876,7 @@ export default function RoleDashboardClient() {
                 <tbody>
                   {unresolvedReports.map((report) => {
                     const ageDays = report.createdAt
-                      ? Math.floor((Date.now() - new Date(report.createdAt).getTime()) / 86400000)
+                      ? Math.floor((now - new Date(report.createdAt).getTime()) / 86400000)
                       : 0;
                     return (
                       <tr key={report.id} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
@@ -2796,7 +2788,7 @@ export default function RoleDashboardClient() {
             <div>
               <h3 className="text-xl font-semibold text-[#173c32]">{activeItem}</h3>
               <p className="mt-1 text-sm text-[#687468]">
-                Reports filtered by "{activeItem}" within your jurisdiction.
+                Reports filtered by &ldquo;{activeItem}&rdquo; within your jurisdiction.
               </p>
             </div>
             <div className="rounded-lg border border-[#dce2d8] p-4">
@@ -3739,6 +3731,8 @@ export default function RoleDashboardClient() {
       )}
     </div>
   );
+
+  if (!isValidRole(role)) return null;
 
   return (
     <GovernmentShell

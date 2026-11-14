@@ -1,26 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
 ).replace(/\/+$/, "");
 
-const categories = [
-  "Roads",
-  "Drainage",
-  "Waste Management",
-  "Water",
-  "Street Lighting",
-  "Public Facilities",
-  "Other",
-];
-
 const initialForm = {
   title: "",
-  category: "Roads",
+  category: "",
   location: "",
   description: "",
 };
@@ -30,6 +20,27 @@ export default function GuestReportPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [reportId, setReportId] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCategories() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/categories`, { cache: "no-store" });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || "Unable to load issue categories.");
+        const list = Array.isArray(result?.data?.categories) ? result.data.categories : [];
+        if (!cancelled) setCategories(list.filter((category) => category.isActive !== false));
+      } catch (loadError) {
+        if (!cancelled) setError(loadError.message || "Unable to load issue categories.");
+      } finally {
+        if (!cancelled) setCategoriesLoading(false);
+      }
+    }
+    void loadCategories();
+    return () => { cancelled = true; };
+  }, []);
 
   function updateField(event) {
     const { name, value } = event.target;
@@ -43,6 +54,9 @@ export default function GuestReportPage() {
     setReportId("");
 
     try {
+      if (!form.category) {
+        throw new Error("Please choose an issue category.");
+      }
       const response = await fetch(`${API_BASE_URL}/api/reports/guest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -150,9 +164,12 @@ export default function GuestReportPage() {
                 value={form.category}
                 onChange={updateField}
                 className="w-full rounded-xl border border-[#cbd6cf] bg-white px-4 py-3 text-sm outline-none focus:border-[#187a58] focus:ring-2 focus:ring-[#187a58]/15"
+                required
+                disabled={categoriesLoading}
               >
+                <option value="">{categoriesLoading ? "Loading categories…" : "Select a category"}</option>
                 {categories.map((category) => (
-                  <option key={category} value={category}>{category}</option>
+                  <option key={category.id || category.name} value={category.name}>{category.name}</option>
                 ))}
               </select>
             </div>

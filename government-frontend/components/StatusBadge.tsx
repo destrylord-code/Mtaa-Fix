@@ -12,6 +12,15 @@ const STATUS_CONFIG = {
   REOPENED: { label: "Reopened", icon: Clock, color: "bg-[#f0ebd9] text-[#66572f] border-[#e3d9c2]" },
   CANCELLED: { label: "Cancelled", icon: AlertTriangle, color: "bg-[#f2e2dc] text-[#7d4435] border-[#e5d5cf]" },
   DUPLICATE: { label: "Duplicate", icon: Mail, color: "bg-[#e8eee9] text-[#687468] border-[#d1d9d3]" },
+  DRAFT: { label: "Draft", icon: Mail, color: "bg-[#e8eee9] text-[#687468] border-[#d1d9d3]" },
+  NEEDS_MORE_INFO: { label: "Needs more info", icon: AlertTriangle, color: "bg-[#f0ebd9] text-[#66572f] border-[#e3d9c2]" },
+  VERIFIED: { label: "Verified", icon: CheckCircle, color: "bg-[#e5f3eb] text-[#187a58] border-[#b8d9c4]" },
+  ASSIGNED: { label: "Assigned", icon: Mail, color: "bg-[#dce8d8] text-[#244637] border-[#bcd6c2]" },
+  ACKNOWLEDGED: { label: "Acknowledged", icon: CheckCircle, color: "bg-[#dce8d8] text-[#244637] border-[#bcd6c2]" },
+  INSPECTION_IN_PROGRESS: { label: "Inspection in progress", icon: Clock, color: "bg-[#dce8d8] text-[#244637] border-[#bcd6c2]" },
+  AWAITING_EXTERNAL_AGENCY: { label: "Awaiting external agency", icon: Clock, color: "bg-[#f0ebd9] text-[#66572f] border-[#e3d9c2]" },
+  RESOLUTION_SUBMITTED: { label: "Resolution submitted", icon: Mail, color: "bg-[#e4e8dd] text-[#344338] border-[#c9d4cb]" },
+  AWAITING_CITIZEN_VERIFICATION: { label: "Awaiting verification", icon: Clock, color: "bg-[#f0ebd9] text-[#66572f] border-[#e3d9c2]" },
 };
 
 function normalizeStatus(value) {
