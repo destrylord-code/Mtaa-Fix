@@ -12,7 +12,7 @@
 [![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?logo=prisma)](https://www.prisma.io/)
 [![License: ISC](https://img.shields.io/badge/License-ISC-lightgrey)](LICENSE)
 
-A civic technology platform that connects citizens of Kisii County with their county government. Residents report local infrastructure and service delivery issues, while government officials—across 14 distinct roles—track, assign, and resolve those reports through structured workflows with SLA tracking and escalation paths.
+A civic technology platform that connects citizens of Kisii County with their county government. Residents report local infrastructure and service delivery issues, while government officials—across 15 distinct roles—track, assign, and resolve those reports through structured workflows with SLA tracking and escalation paths.
 
 ## Overview
 
@@ -35,7 +35,7 @@ Mtaa Fix digitizes the end-to-end community reporting lifecycle. A citizen submi
 
 ### Verified capabilities (implemented in code)
 
-- **Multi-role authentication** — JWT access/refresh token rotation with bcrypt password hashing; 14 roles enforced server-side
+- **Multi-role authentication** — JWT access/refresh token rotation with bcrypt password hashing; 15 roles enforced server-side
 - **Citizen reporting** — Submit reports with category, priority, location, GPS coordinates, and media uploads; anonymous guest reporting supported
 - **Report lifecycle** — 20 statuses with validated transitions (SUBMITTED → UNDER_REVIEW → ASSIGNED → IN_PROGRESS → RESOLVED → CITIZEN VERIFICATION → CLOSED)
 - **Assignments & routing** — Reports assigned to officers with reason tracking; routing rules route by category and location
@@ -185,7 +185,7 @@ mtaa-fix/
 │   └── .env.example
 ├── government-frontend/      # Next.js government portal (port 302)
 │   ├── app/
-│   │   ├── government/       # Role-based dashboard (14 roles)
+│   │   ├── government/       # Role-based dashboard (15 roles)
 │   │   ├── login/            # Government authentication
 │   │   ├── auth/callback/    # Auth handoff exchange
 │   │   └── api/session/      # Session cookie management
@@ -251,7 +251,7 @@ Initialize the database:
 ```bash
 npx prisma db push
 npm run db:seed          # Seeds counties, departments, categories, Kisii geography
-node prisma/dev-seed.js  # Seeds test accounts for all 14 roles
+npm run db:seed:dev      # Development-only test accounts for all 15 roles
 ```
 
 Start the backend:
@@ -289,11 +289,11 @@ npm run dev          # starts all 4 apps
 
 ### Cloudinary (image storage)
 
-Report evidence uploads support Cloudinary. Configure `CLOUDINARY_*` variables in `backend/.env`. Without Cloudinary, uploads are stored locally in `backend/uploads/` and served via `/uploads`.
+Report evidence uploads support Cloudinary. Configure `CLOUDINARY_*` variables in `backend/.env`. Without Cloudinary, uploads are stored locally in `backend/uploads/` (or `UPLOAD_DIR`) and served through the authenticated `/uploads/:filename` endpoint; files are not public.
 
 ### Resend (email delivery)
 
-Verification codes and password reset emails are sent via Resend when `RESEND_API_KEY` is set. In development without a key, codes are logged to the console.
+Verification codes and password reset emails are sent via Resend when `RESEND_API_KEY` and `EMAIL_FROM` are set. Production account email requires Resend; development without a key logs codes to the console. Test runs use an in-memory outbox.
 
 ### Supabase / Neon (PostgreSQL)
 
@@ -308,7 +308,11 @@ The backend connects via `DATABASE_URL`. For Supabase connection pooling (port 6
 | `JWT_REFRESH_SECRET` | Yes | Refresh token signing key |
 | `CLIENT_URL` | Yes | Comma-separated allowed CORS origins |
 | `RESEND_API_KEY` | No | Email delivery (falls back to console log) |
-| `CLOUDINARY_*` | No | Image storage (falls back to local `/uploads`) |
+| `CLOUDINARY_*` | No | Image storage (falls back to private local uploads) |
+| `EMAIL_FROM` | Production email | Verified Resend sender address |
+| `PGSSL_REJECT_UNAUTHORIZED` | No | Set `false` only for trusted local/test DBs; default verifies TLS |
+| `TRUST_PROXY` | No | Set `1` when behind exactly one trusted reverse proxy |
+| `UPLOAD_DIR` | No | Local evidence directory (default `backend/uploads`) |
 
 ## Testing
 
@@ -325,6 +329,8 @@ npm run test:departments # Department management
 npm run test:officers  # Officer management
 npm run test:operations # End-to-end report workflow
 npm run test:monitoring # Dashboard & escalation audit
+npm run test:postgres   # PostgreSQL integration run using a local PGlite test database
+npm run test:live-dashboard # Live dashboard check (requires seeded PostgreSQL DB)
 ```
 
 ## Security
@@ -348,7 +354,7 @@ Security controls are enforced **server-side**, not just in the UI:
 The following improvements are identified in the project planning documents (`docs/mtaa-fix-planning/`):
 
 - **Backend:** Jurisdiction-scoping for dashboard APIs; role-specific dashboard summary endpoints
-- **Government Dashboard:** Role-specific stats, charts, and tables per the 14-role specification (currently shares generic data across roles with role-specific menus)
+- **Government Dashboard:** Role-specific menus and stats over jurisdiction-scoped backend data for the 15-role specification
 - **Citizen Dashboard:** Pending tasks, overdue work, notifications polish
 - **Admin Dashboard:** System health, audit logs, role/permission management UI (currently UI structure without full API wiring)
 - **Technical resolution UI:** Inspection, work update, and resolution submission interfaces for supervisors and field officers
