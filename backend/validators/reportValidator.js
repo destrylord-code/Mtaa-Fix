@@ -1,17 +1,18 @@
 import { z } from 'zod';
 
+const mediaSchema = z.array(z.string().max(2048)).max(5);
 export const createReportSchema = z.object({
   title: z.string().trim().min(3, 'Title must be at least 3 characters').max(150),
-  description: z.string().trim().min(10, 'Description must be at least 10 characters'),
+  description: z.string().trim().min(10, 'Description must be at least 10 characters').max(5000),
   category: z.string().trim().min(2, 'Category is required'),
   subCategory: z.string().trim().optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT', 'CRITICAL']).optional().default('MEDIUM'),
-  location: z.string().trim().optional(),
+  location: z.string().trim().max(200).optional(),
   county: z.string().trim().optional(),
   subCounty: z.string().trim().optional(),
   ward: z.string().trim().optional(),
-  latitude: z.union([z.number(), z.string().transform((v) => parseFloat(v))]).optional(),
-  longitude: z.union([z.number(), z.string().transform((v) => parseFloat(v))]).optional(),
+  latitude: z.union([z.number(), z.string().trim().min(1).transform((v) => Number(v)).pipe(z.number().finite())]).optional(),
+  longitude: z.union([z.number(), z.string().trim().min(1).transform((v) => Number(v)).pipe(z.number().finite())]).optional(),
   isAnonymous: z
     .union([
       z.boolean(),
@@ -19,7 +20,7 @@ export const createReportSchema = z.object({
     ])
     .optional()
     .default(false),
-  mediaUrls: z.array(z.string().url()).optional(),
+  mediaUrls: z.union([mediaSchema, z.string().transform((v) => { try { return JSON.parse(v); } catch { return [v]; } }).pipe(mediaSchema)]).optional(),
 });
 
 export const createGuestReportSchema = createReportSchema.extend({
@@ -41,19 +42,19 @@ export const updateReportSchema = z.object({
   category: z.string().trim().min(2).optional(),
   subCategory: z.string().trim().optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT', 'CRITICAL']).optional(),
-  location: z.string().trim().optional(),
+  location: z.string().trim().max(200).optional(),
   county: z.string().trim().optional(),
   subCounty: z.string().trim().optional(),
   ward: z.string().trim().optional(),
-  latitude: z.union([z.number(), z.string().transform((v) => parseFloat(v))]).optional(),
-  longitude: z.union([z.number(), z.string().transform((v) => parseFloat(v))]).optional(),
+  latitude: z.union([z.number(), z.string().trim().min(1).transform((v) => Number(v)).pipe(z.number().finite())]).optional(),
+  longitude: z.union([z.number(), z.string().trim().min(1).transform((v) => Number(v)).pipe(z.number().finite())]).optional(),
   isAnonymous: z
     .union([
       z.boolean(),
       z.string().transform((v) => v === 'true' || v === '1'),
     ])
     .optional(),
-  mediaUrls: z.array(z.string().url()).optional(),
+  mediaUrls: z.union([mediaSchema, z.string().transform((v) => { try { return JSON.parse(v); } catch { return [v]; } }).pipe(mediaSchema)]).optional(),
 });
 
 export const changeStatusSchema = z.object({
@@ -78,21 +79,23 @@ export const changeStatusSchema = z.object({
     'CANCELLED',
     'ESCALATED',
   ]),
-  notes: z.string().trim().optional(),
-  resolutionNotes: z.string().trim().optional(),
+  notes: z.string().trim().max(2000).optional(),
+  resolutionNotes: z.string().trim().max(2000).optional(),
   assignedOfficerId: z.string().trim().optional(),
   departmentId: z.string().trim().optional(),
   resolutionMediaUrls: z.array(z.string()).optional(),
 });
 
 export const acceptResolutionSchema = z.object({
-  feedback: z.string().trim().optional(),
+  feedback: z.string().trim().max(2000).optional(),
   rating: z.union([z.number().min(1).max(5), z.string().transform((v) => parseInt(v, 10))]).optional(),
 });
 
 export const rejectResolutionSchema = z.object({
-  reason: z.string().trim().min(5, 'Rejection reason must be at least 5 characters explaining why resolution was not satisfactory'),
-});
+  reason: z.string().trim().max(2000).optional(),
+  feedback: z.string().trim().max(2000).optional(),
+}).refine((v) => (v.reason || v.feedback || '').trim().length >= 5, { message: 'Explain why the resolution was not satisfactory (at least 5 characters).', path: ['reason'] });
+export const partialResolutionSchema = z.object({ reason: z.string().trim().min(5).max(2000) });
 
 export const filterReportsQuerySchema = z.object({
   status: z.string().optional(),

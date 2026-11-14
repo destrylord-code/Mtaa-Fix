@@ -10,7 +10,7 @@ const notificationRepository = {
     };
     if (checkIsPrisma()) {
       try { return await getPrismaClient().notification.create({ data: notification }); }
-      catch (error) { console.warn('[DB] Prisma createNotification failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     memoryStore.notifications.set(notification.id, notification);
     return { ...notification };
@@ -22,7 +22,7 @@ const notificationRepository = {
           where: { userId, ...(unreadOnly && { isRead: false }) },
           orderBy: { createdAt: 'desc' },
         });
-      } catch (error) { console.warn('[DB] Prisma findNotifications failed, falling back to memory:', error.message); }
+      } catch (error) { throw error; }
     }
     return [...memoryStore.notifications.values()]
       .filter((item) => item.userId === userId && (!unreadOnly || !item.isRead))
@@ -30,8 +30,8 @@ const notificationRepository = {
   },
   async updateNotification(id, userId, data) {
     if (checkIsPrisma()) {
-      try { return await getPrismaClient().notification.updateMany({ where: { id, userId }, data }); }
-      catch (error) { console.warn('[DB] Prisma updateNotification failed, falling back to memory:', error.message); }
+      try { const result = await getPrismaClient().notification.updateMany({ where: { id, userId }, data }); return result.count ? { id, userId, ...data } : null; }
+      catch (error) { throw error; }
     }
     const notification = memoryStore.notifications.get(id);
     if (!notification || notification.userId !== userId) return null;
@@ -42,7 +42,7 @@ const notificationRepository = {
   async markAllAsRead(userId) {
     if (checkIsPrisma()) {
       try { return await getPrismaClient().notification.updateMany({ where: { userId, isRead: false }, data: { isRead: true } }); }
-      catch (error) { console.warn('[DB] Prisma markAllAsRead failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     let count = 0;
     for (const item of memoryStore.notifications.values()) {
@@ -53,7 +53,7 @@ const notificationRepository = {
   async deleteNotification(id, userId) {
     if (checkIsPrisma()) {
       try { return (await getPrismaClient().notification.deleteMany({ where: { id, userId } })).count > 0; }
-      catch (error) { console.warn('[DB] Prisma deleteNotification failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     const item = memoryStore.notifications.get(id);
     return Boolean(item && item.userId === userId && memoryStore.notifications.delete(id));

@@ -23,17 +23,21 @@ export const createUserSchema = z.object({
   subCounty: z.string().trim().max(100).optional(),
   ward: z.string().trim().max(100).optional(),
   departmentId: z.string().trim().optional(),
+  countyId: z.string().trim().optional(),
+  subCountyId: z.string().trim().optional(),
+  wardId: z.string().trim().optional(),
   isActive: z.boolean().optional().default(true),
 });
 
 export const updateUserSchema = createUserSchema
-  .omit({ password: true, email: true, role: true })
+  .omit({ password: true, email: true })
   .partial();
 
+const optionalFilter = (schema) => z.preprocess((v) => v === '' ? undefined : v, schema.optional());
 export const userQuerySchema = z.object({
-  role: roleSchema.optional(),
-  isActive: z.union([z.boolean(), z.string()]).optional(),
-  departmentId: z.string().trim().optional(),
+  role: optionalFilter(roleSchema),
+  isActive: optionalFilter(z.enum(['true','false'])),
+  departmentId: optionalFilter(z.string().trim()),
   search: z.string().trim().max(100).optional(),
 });
 

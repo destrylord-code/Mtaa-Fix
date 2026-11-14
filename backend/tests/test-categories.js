@@ -1,10 +1,10 @@
+import './setup.js';
 import http from 'http';
 
 process.env.NODE_ENV = 'test';
 process.env.PORT = '5077';
-// Use the in-memory store so tests are deterministic and do not depend on a
-// live PostgreSQL connection (mirrors test-auth.js).
-process.env.DATABASE_URL = '';
+// Storage selection is centralized in ./setup.js (memory by default,
+// PostgreSQL when MTAA_TEST_DATABASE_URL is explicitly provided).
 
 import app from '../index.js';
 import db from '../config/db.js';
@@ -65,9 +65,9 @@ async function runCategoryTests() {
     // 0. Seed admin user
     const admin = await db.createUser({
       name: 'System Admin',
-      email: 'admin.cat@example.com',
-      password: 'hashedpassword',
-      role: 'ADMIN',
+      email: `admin.cat.${Date.now()}@example.com`,
+      password: 'hashedpassword', isVerified: true, emailVerified: true,
+      role: 'SUPER_ADMIN',
     });
     const adminToken = generateAccessToken({
       id: admin.id,

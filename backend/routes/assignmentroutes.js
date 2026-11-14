@@ -8,7 +8,7 @@ import { ADMIN_ROLES, WARD_SCOPED_ROLES, DEPARTMENT_SCOPED_ROLES, STATUS_CHANGE_
 
 const router = express.Router();
 const assignmentReadRoles = [...new Set([...ADMIN_ROLES, ...WARD_SCOPED_ROLES, ...DEPARTMENT_SCOPED_ROLES])];
-const assignmentWriteRoles = [...STATUS_CHANGE_ROLES];
+const assignmentWriteRoles = ['TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER', 'ADMIN', 'SUPER_ADMIN'];
 
 router.get('/', ...[authenticate, authorizeRoles(...assignmentReadRoles)], validate(assignmentQuerySchema, 'query'), getAssignments);
 router.get('/history/:reportId', ...[authenticate, authorizeRoles(...assignmentReadRoles)], getAssignmentHistory);

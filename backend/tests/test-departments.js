@@ -1,3 +1,4 @@
+import './setup.js';
 import http from 'http';
 import app from '../index.js';
 import db from '../config/db.js';
@@ -27,9 +28,9 @@ const server = app.listen(port, async () => {
   try {
     const admin = await db.createUser({
       name: 'Department Test Admin',
-      email: 'department-admin@example.com',
-      password: 'hashedpassword',
-      role: 'ADMIN',
+      email: `department-admin.${Date.now()}@example.com`,
+      password: 'hashedpassword', isVerified: true, emailVerified: true,
+      role: 'SUPER_ADMIN',
     });
     const token = generateAccessToken({ id: admin.id, email: admin.email, role: admin.role });
 

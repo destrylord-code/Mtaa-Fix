@@ -6,6 +6,7 @@ export const memoryStore = {
   verificationTokens: new Map(),
   passwordResetTokens: new Map(),
   reports: new Map(),
+  attachments: new Map(),
   categories: new Map(),
   subcategories: new Map(),
   counties: new Map(),

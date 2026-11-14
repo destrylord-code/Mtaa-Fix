@@ -42,7 +42,7 @@ export const subcategoryRepository = {
           include: { category: true },
         });
       } catch (err) {
-        console.warn('[DB] Prisma createSubcategory failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 
@@ -60,7 +60,7 @@ export const subcategoryRepository = {
           include: { category: Boolean(includeCategory) },
         });
       } catch (err) {
-        console.warn('[DB] Prisma findSubcategoryById failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 
@@ -95,7 +95,7 @@ export const subcategoryRepository = {
           orderBy: { [sortBy]: sortOrder.toLowerCase() === 'desc' ? 'desc' : 'asc' },
         });
       } catch (err) {
-        console.warn('[DB] Prisma findSubcategories failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 
@@ -139,7 +139,7 @@ export const subcategoryRepository = {
           include: { category: true },
         });
       } catch (err) {
-        console.warn('[DB] Prisma updateSubcategory failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 
@@ -161,7 +161,7 @@ export const subcategoryRepository = {
         await getPrismaClient().subcategory.delete({ where: { id } });
         return true;
       } catch (err) {
-        console.warn('[DB] Prisma deleteSubcategory failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 

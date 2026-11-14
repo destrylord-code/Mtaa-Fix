@@ -1,3 +1,4 @@
+import './setup.js';
 import http from 'http';
 
 process.env.NODE_ENV = 'test';
@@ -64,7 +65,7 @@ async function runReportTests() {
     const citizen = await db.createUser({
       name: 'Alice Citizen',
       email: `alice.${testId}@example.com`,
-      password: 'hashedpassword',
+      password: 'hashedpassword', isVerified: true, emailVerified: true,
       role: 'CITIZEN',
       ward: 'Kilimani Ward',
     });
@@ -74,11 +75,13 @@ async function runReportTests() {
       role: citizen.role,
     });
 
+    const department = await db.createDepartment({ name: `Test Department ${testId}`, code: `TEST_${testId}` });
     const officer = await db.createUser({
       name: 'Officer Bob',
       email: `bob.${testId}@example.com`,
-      password: 'hashedpassword',
-      role: 'OFFICER',
+      password: 'hashedpassword', isVerified: true, emailVerified: true,
+      role: 'TECHNICAL_HEAD',
+      departmentId: department.id,
     });
     const officerToken = generateAccessToken({
       id: officer.id,
@@ -108,11 +111,12 @@ async function runReportTests() {
     const reportData = {
       title: 'Major Pothole on Argwings Kodhek Road',
       description: 'Dangerous pothole damaging vehicles right next to the shopping center.',
-      category: 'Roads & Infrastructure',
+      category: 'Roads, Traffic & Mobility',
       priority: 'HIGH',
       location: 'Argwings Kodhek Road, near Yaya Centre',
-      ward: 'Kilimani Ward',
-      county: 'Nairobi',
+      county: 'Kisii',
+      subCounty: 'Bobasi',
+      ward: 'Bassi Central',
       latitude: -1.2921,
       longitude: 36.7842,
     };
@@ -123,6 +127,8 @@ async function runReportTests() {
     console.log('✓ 1. createReport (POST /api/reports):', createRes.status, createRes.body.message);
     if (createRes.status !== 201) throw new Error('createReport failed');
     const createdReportId = createRes.body.data.report.id;
+
+    await db.updateReport(createdReportId, { departmentId: department.id });
 
     // 2. GET /api/reports - getReports
     const listRes = await request('GET', '/api/reports', null, {
@@ -228,7 +234,7 @@ async function runReportTests() {
       }
     );
     console.log('✓ 8. acceptResolution:', acceptRes.status, acceptRes.body.message);
-    if (acceptRes.status !== 200 || acceptRes.body.data?.report?.resolutionStatus !== 'ACCEPTED') throw new Error('acceptResolution failed');
+    if (acceptRes.status !== 200 || acceptRes.body.data?.report?.resolutionStatus !== 'ACCEPTED' || acceptRes.body.data?.report?.status !== 'CLOSED') throw new Error('acceptResolution failed');
 
     // 10. GET /api/reports/search - searchReports
     const searchRes = await request('GET', '/api/reports/search?q=Argwings', null, {
@@ -238,20 +244,30 @@ async function runReportTests() {
     if (searchRes.status !== 200 || searchRes.body.data?.total < 1) throw new Error('searchReports failed');
 
     // 11. GET /api/reports/filter - filterReports
-    const filterRes = await request('GET', '/api/reports/filter?status=RESOLVED&ward=Kilimani', null, {
+    const filterRes = await request('GET', '/api/reports/filter?status=CLOSED&ward=Bassi%20Central', null, {
       Authorization: `Bearer ${citizenToken}`,
     });
     console.log('✓ 10. filterReports (GET /api/reports/filter):', filterRes.status, `Filtered: ${filterRes.body.data?.total}`);
     if (filterRes.status !== 200 || filterRes.body.data?.total < 1) throw new Error('filterReports failed');
 
+    // Acceptance must close the original. Create an open case with the same
+    // title so this assertion continues to test duplicate detection, not a
+    // stale resolved record accidentally left open by the old API.
+    const openDuplicateFixture = await request('POST', '/api/reports', {
+      title: 'Major Pothole on Argwings Kodhek Road',
+      description: 'An open report for duplicate detection verification.',
+      category: 'Roads, Traffic & Mobility', county: 'Kisii', subCounty: 'Bobasi', ward: 'Bassi Central',
+    }, { Authorization: `Bearer ${citizenToken}` });
+    if (openDuplicateFixture.status !== 201) throw new Error('Open duplicate fixture creation failed');
     // 11b. duplicate detection flags a similar open report
     const dupRes = await request('POST', '/api/reports', {
       title: 'Major Pothole on Argwings Kodhek Road',
       description: 'Same pothole reported again while still open.',
-      category: 'Roads & Infrastructure',
+      category: 'Roads, Traffic & Mobility',
       priority: 'HIGH',
-      ward: 'Kilimani Ward',
-      county: 'Nairobi',
+      county: 'Kisii',
+      subCounty: 'Bobasi',
+      ward: 'Bassi Central',
     }, { Authorization: `Bearer ${citizenToken}` });
     console.log('✓ 11b. duplicate detection:', dupRes.status, `Matches: ${dupRes.body.data?.possibleDuplicates?.length}`);
     if (dupRes.status !== 201 || (dupRes.body.data?.possibleDuplicates?.length ?? 0) < 1) throw new Error('duplicate detection failed');
@@ -260,7 +276,7 @@ async function runReportTests() {
     const tempReport = await request('POST', '/api/reports', {
       title: 'Temporary Duplicate Report',
       description: 'This is a duplicate test report to verify delete functionality.',
-      category: 'Public Health',
+      category: 'Roads, Traffic & Mobility',
       priority: 'LOW',
     }, {
       Authorization: `Bearer ${citizenToken}`,
@@ -291,8 +307,8 @@ async function runReportTests() {
     // 14. ward-scoped officer cannot act on another ward's report
     const otherOfficer = await db.createUser({
       name: 'Other Ward Officer',
-      email: 'other.officer@example.com',
-      password: 'hashedpassword',
+      email: `other.officer.${Date.now()}@example.com`,
+      password: 'hashedpassword', isVerified: true, emailVerified: true,
       role: 'OFFICER',
       ward: 'Other Ward',
     });
@@ -304,7 +320,7 @@ async function runReportTests() {
     if (forbidden.status !== 403) throw new Error('jurisdiction scoping failed');
 
     console.log('\n======================================================');
-    console.log('ALL 11 REPORT ACTIONS AND ROUTES VERIFIED SUCCESSFULLY!');
+    console.log('ALL REPORT ACTIONS AND ROUTES VERIFIED SUCCESSFULLY!');
     console.log('======================================================');
   } catch (error) {
     console.error('REPORT TEST ERROR:', error);

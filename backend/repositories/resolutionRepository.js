@@ -17,13 +17,13 @@ const resolutionRepository = {
     };
     if (checkIsPrisma()) {
       try {
-        return await getPrismaClient().resolutionSubmission.create({ data: submission });
+        return await getPrismaClient().resolutionSubmission.create({ data: submission , include: { report: true } });
       } catch (error) {
-        console.warn('[DB] Prisma createResolutionSubmission failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     memoryStore.resolutionSubmissions.set(submission.id, submission);
-    return { ...submission };
+    return { ...submission, report: memoryStore.reports.get(submission.reportId) || null };
   },
   async findResolutionSubmissions({ reportId, submittedById } = {}) {
     if (checkIsPrisma()) {
@@ -33,21 +33,22 @@ const resolutionRepository = {
             ...(reportId && { reportId }),
             ...(submittedById && { submittedById }),
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' }, include: { report: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findResolutionSubmissions failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.resolutionSubmissions.values()]
       .filter((item) => (!reportId || item.reportId === reportId)
         && (!submittedById || item.submittedById === submittedById))
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((item) => ({ ...item, report: memoryStore.reports.get(item.reportId) || null }));
   },
   async findResolutionSubmissionById(id) {
     if (checkIsPrisma()) {
-      try { return await getPrismaClient().resolutionSubmission.findUnique({ where: { id } }); }
-      catch (error) { console.warn('[DB] Prisma findResolutionSubmissionById failed, falling back to memory:', error.message); }
+      try { return await getPrismaClient().resolutionSubmission.findUnique({ where: { id }, include: { report: true } }); }
+      catch (error) { throw error; }
     }
     return memoryStore.resolutionSubmissions.get(id) || null;
   },
@@ -56,17 +57,17 @@ const resolutionRepository = {
       try {
         return await getPrismaClient().resolutionSubmission.update({
           where: { id },
-          data: { ...updateData, updatedAt: new Date() },
+          data: { ...updateData, updatedAt: new Date() }, include: { report: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma updateResolutionSubmission failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     const existing = memoryStore.resolutionSubmissions.get(id);
     if (!existing) return null;
     const updated = { ...existing, ...updateData, updatedAt: new Date() };
     memoryStore.resolutionSubmissions.set(id, updated);
-    return { ...updated };
+    return { ...updated, report: memoryStore.reports.get(updated.reportId) || null };
   },
 };
 

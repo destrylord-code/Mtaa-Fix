@@ -1,73 +1,66 @@
-let resendClient = null;
+import { Resend } from 'resend';
 
-try {
-  const { Resend } = await import('resend');
-  if (process.env.RESEND_API_KEY) {
-    resendClient = new Resend(process.env.RESEND_API_KEY);
+let resendClient;
+const testOutbox = [];
+const useTestOutbox = () => process.env.NODE_ENV === 'test' && process.env.EMAIL_TRANSPORT === 'memory';
+
+export function assertEmailConfigured() {
+  if (useTestOutbox() || process.env.NODE_ENV !== 'production') return;
+  if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY.startsWith('re_your_') || !process.env.EMAIL_FROM) {
+    const error = new Error('Account email delivery is not configured. Please contact the administrator.');
+    error.statusCode = 503;
+    throw error;
   }
-} catch (e) {
+}
+
+/** Test-only transport. There is deliberately no HTTP endpoint exposing this outbox. */
+export function getTestEmails(email) {
+  if (!useTestOutbox()) throw new Error('The test outbox is unavailable outside test mode.');
+  return testOutbox.filter((message) => !email || message.email === email).map((message) => ({ ...message }));
+}
+
+async function send(email, subject, html, secrets) {
+  assertEmailConfigured();
+  if (useTestOutbox()) {
+    testOutbox.push({ email, subject, ...secrets, createdAt: new Date() });
+    return true;
+  }
+  if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY.startsWith('re_your_')) {
+    // Explicit development transport; never log credentials or verification secrets in production.
+    if (process.env.NODE_ENV === 'production') assertEmailConfigured();
+    console.info(`[Email development transport] ${subject} for ${email}; code: ${secrets.code}`);
+    return true;
+  }
+  resendClient ||= new Resend(process.env.RESEND_API_KEY);
+  const result = await resendClient.emails.send({
+    from: process.env.EMAIL_FROM || 'Mtaa Fix <noreply@communityreporting.org>',
+    to: email, subject, html,
+  });
+  if (result.error) throw new Error(`Email delivery failed: ${result.error.message}`);
+  return true;
 }
 
 export async function sendVerificationEmail({ email, code, token }) {
-  const from = process.env.EMAIL_FROM || 'Community Reporting <noreply@communityreporting.org>';
-  const subject = 'Verify your Community Reporting account';
-  const html = `
-    <h2>Welcome to Community Reporting System</h2>
-    <p>Please verify your email to start submitting or tracking community reports.</p>
-    <p><strong>Your verification code:</strong> <span style="font-size: 24px; letter-spacing: 4px; font-weight: bold;">${code}</span></p>
-    <p>This code will expire in 30 minutes.</p>
-  `;
-
-  if (resendClient && process.env.RESEND_API_KEY) {
-    try {
-      await resendClient.emails.send({
-        from,
-        to: email,
-        subject,
-        html,
-      });
-      return true;
-    } catch (err) {
-      console.error('[Notifier] Resend verification email failed:', err.message);
-    }
-  }
-
-  // Development fallback logging
-  console.log(`[Notifier DEV] Verification Code for ${email}: ${code} (Token: ${token})`);
-  return true;
+  const base = process.env.CITIZEN_APP_URL || 'http://localhost:3000';
+  const link = `${base.replace(/\/$/, '')}/create-account?token=${encodeURIComponent(token)}`;
+  return send(email, 'Verify your Mtaa Fix account', `
+    <h2>Welcome to Mtaa Fix</h2>
+    <p>Verify your email to submit and track community reports.</p>
+    <p>Your verification code: <strong>${code}</strong></p>
+    <p><a href="${link}">Verify my email</a></p>
+    <p>This code expires in 30 minutes. If you did not register, ignore this email.</p>
+  `, { code, token });
 }
 
 export async function sendPasswordResetEmail({ email, token, code }) {
-  const from = process.env.EMAIL_FROM || 'Community Reporting <noreply@communityreporting.org>';
-  const subject = 'Password Reset Request';
-  const html = `
-    <h2>Password Reset Request</h2>
-    <p>You requested a password reset for your Community Reporting account.</p>
-    <p><strong>Reset Code:</strong> <span style="font-size: 24px; letter-spacing: 4px; font-weight: bold;">${code}</span></p>
-    <p>Reset Token: <code>${token}</code></p>
-    <p>If you did not request this, please ignore this email.</p>
-  `;
-
-  if (resendClient && process.env.RESEND_API_KEY) {
-    try {
-      await resendClient.emails.send({
-        from,
-        to: email,
-        subject,
-        html,
-      });
-      return true;
-    } catch (err) {
-      console.error('[Notifier] Resend password reset email failed:', err.message);
-    }
-  }
-
-  // Development fallback logging
-  console.log(`[Notifier DEV] Password Reset Code for ${email}: ${code} (Token: ${token})`);
-  return true;
+  const base = process.env.CITIZEN_APP_URL || 'http://localhost:3000';
+  const link = `${base.replace(/\/$/, '')}/forgot-password?token=${encodeURIComponent(token)}`;
+  return send(email, 'Reset your Mtaa Fix password', `
+    <h2>Password reset request</h2>
+    <p>Use this code to reset your password: <strong>${code}</strong></p>
+    <p><a href="${link}">Choose a new password</a></p>
+    <p>This code expires in one hour. If you did not request a reset, ignore this email.</p>
+  `, { code, token });
 }
 
-export default {
-  sendVerificationEmail,
-  sendPasswordResetEmail,
-};
+export default { sendVerificationEmail, sendPasswordResetEmail, assertEmailConfigured, getTestEmails };

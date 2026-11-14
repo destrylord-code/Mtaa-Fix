@@ -45,7 +45,7 @@ export async function recordStatusHistory({ reportId, fromStatus, toStatus, note
     try {
       return await getPrismaClient().reportStatusHistory.create({ data });
     } catch (err) {
-      console.warn('[DB] Prisma status history write failed, using memory fallback:', err.message);
+      throw err;
     }
   }
   const record = { id: uuidv4(), ...data, createdAt: new Date() };
@@ -62,7 +62,7 @@ export async function getStatusHistory(reportId) {
         include: { actor: { select: { id: true, name: true, role: true } } },
       });
     } catch (err) {
-      console.warn('[DB] Prisma status history read failed, using memory fallback:', err.message);
+      throw err;
     }
   }
   return [...memoryStore.statusHistories.values()]

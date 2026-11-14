@@ -16,7 +16,7 @@ const auditLogRepository = {
     };
     if (checkIsPrisma()) {
       try { return await getPrismaClient().auditLog.create({ data: log }); }
-      catch (error) { console.warn('[DB] Prisma createAuditLog failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     memoryStore.auditLogs.set(log.id, log);
     return { ...log };
@@ -28,7 +28,7 @@ const auditLogRepository = {
           where: { ...(entityType && { entityType }), ...(entityId && { entityId }), ...(actorId && { actorId }) },
           orderBy: { createdAt: 'desc' },
         });
-      } catch (error) { console.warn('[DB] Prisma findAuditLogs failed, falling back to memory:', error.message); }
+      } catch (error) { throw error; }
     }
     return [...memoryStore.auditLogs.values()]
       .filter((log) => (!entityType || log.entityType === entityType) && (!entityId || log.entityId === entityId) && (!actorId || log.actorId === actorId))
@@ -37,7 +37,7 @@ const auditLogRepository = {
   async findAuditLogById(id) {
     if (checkIsPrisma()) {
       try { return await getPrismaClient().auditLog.findUnique({ where: { id } }); }
-      catch (error) { console.warn('[DB] Prisma findAuditLogById failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     return memoryStore.auditLogs.get(id) || null;
   },

@@ -20,7 +20,7 @@ const departmentRepository = {
       try {
         return await getPrismaClient().department.create({ data: department });
       } catch (error) {
-        console.warn('[DB] Prisma createDepartment failed, falling back to memory:', error.message);
+        throw error;
       }
     }
 
@@ -33,7 +33,7 @@ const departmentRepository = {
       try {
         return await getPrismaClient().department.findUnique({ where: { id } });
       } catch (error) {
-        console.warn('[DB] Prisma findDepartmentById failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return memoryStore.departments.get(id) || null;
@@ -48,7 +48,7 @@ const departmentRepository = {
           where: { name: { equals: normalized, mode: 'insensitive' } },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findDepartmentByName failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.departments.values()].find(
@@ -63,7 +63,7 @@ const departmentRepository = {
       try {
         return await getPrismaClient().department.findUnique({ where: { code: normalized } });
       } catch (error) {
-        console.warn('[DB] Prisma findDepartmentByCode failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.departments.values()].find(
@@ -87,7 +87,7 @@ const departmentRepository = {
           orderBy: { name: 'asc' },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findDepartments failed, falling back to memory:', error.message);
+        throw error;
       }
     }
 
@@ -115,7 +115,7 @@ const departmentRepository = {
           data: { ...data, updatedAt: new Date() },
         });
       } catch (error) {
-        console.warn('[DB] Prisma updateDepartment failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     const existing = memoryStore.departments.get(id);
@@ -131,7 +131,7 @@ const departmentRepository = {
         await getPrismaClient().department.delete({ where: { id } });
         return true;
       } catch (error) {
-        console.warn('[DB] Prisma deleteDepartment failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return memoryStore.departments.delete(id);

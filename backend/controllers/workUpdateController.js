@@ -2,6 +2,7 @@ import db from '../config/db.js';
 import { recordStatusHistory } from '../services/statusWorkflow.js';
 import { canAccessReport } from '../services/jurisdiction.js';
 import { notifyUser } from '../services/notifyService.js';
+import { validateMediaUrls } from '../services/reportValidation.js';
 
 function isFieldOfficer(user) {
   return user && user.role === 'FIELD_OFFICER';
@@ -13,7 +14,7 @@ function isSupervisory(user) {
 
 export const createWorkUpdate = async (req, res, next) => {
   try {
-    const { reportId, note, status } = req.body;
+    const { reportId, note, status, mediaUrls } = req.body;
     const report = await db.findReportById(reportId);
     if (!report) {
       return res.status(404).json({ status: 'error', message: 'Report not found.' });
@@ -30,7 +31,9 @@ export const createWorkUpdate = async (req, res, next) => {
       return res.status(403).json({ status: 'error', message: 'Forbidden: Report is outside your jurisdiction.' });
     }
 
-    const workUpdate = await db.createWorkUpdate({ reportId, officerId: req.user.id, note, status });
+    if (!['ASSIGNED', 'ACKNOWLEDGED', 'INSPECTION_IN_PROGRESS', 'IN_PROGRESS', 'REOPENED'].includes(report.status)) return res.status(409).json({ status: 'error', message: 'Work updates are not available at this workflow stage.' });
+    validateMediaUrls(mediaUrls || []);
+    const workUpdate = await db.createWorkUpdate({ reportId, officerId: req.user.id, note, status, mediaUrls });
 
     await notifyUser(
       report.assignedOfficerId,

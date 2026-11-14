@@ -9,7 +9,16 @@ const withoutPassword = (user) => {
 
 export const createUser = async (req, res, next) => {
   try {
-    const { email, phone, password, role, county, subCounty, ward, departmentId } = req.body;
+    const { email, phone, password, county, subCounty, ward } = req.body;
+    let { role, departmentId, countyId, subCountyId, wardId } = req.body;
+    if (req.user.role !== 'SUPER_ADMIN') {
+      if (['ADMIN','SUPER_ADMIN'].includes(role)) return res.status(403).json({ status: 'error', message: 'Only a super administrator can create platform administrators.' });
+      if (req.user.departmentId) departmentId = req.user.departmentId;
+    }
+    if (departmentId && !await db.findDepartmentById(departmentId)) return res.status(400).json({ status: 'error', message: 'Choose an existing department.' });
+    if (county) { const c = await db.findCountyByName(county); countyId = c?.id || countyId; }
+    if (subCounty && countyId) { const sc = await db.findSubCountyByName(countyId, subCounty); subCountyId = sc?.id || subCountyId; }
+    if (ward && subCountyId) { const w = await db.findWardByName(subCountyId, ward); wardId = w?.id || wardId; }
 
     if (await db.findUserByEmail(email)) {
       return res.status(409).json({
@@ -29,13 +38,16 @@ export const createUser = async (req, res, next) => {
       name: req.body.name,
       email,
       phone,
-      password: await bcrypt.hash(password, 10),
+      password: await bcrypt.hash(password, 12),
       role,
       county,
       subCounty,
       ward,
       departmentId,
+      countyId, subCountyId, wardId,
+      isVerified: true, emailVerified: true,
     });
+    await db.createAuditLog({ actorId: req.user.id, action: 'USER_CREATED', entityType: 'USER', entityId: user.id, newValue: { role: user.role, departmentId: user.departmentId } });
 
     return res.status(201).json({
       status: 'success',
@@ -51,7 +63,8 @@ export const getUsers = async (req, res, next) => {
   try {
     const { role, isActive, departmentId, search } = req.validatedQuery || req.query;
 
-    const users = await db.findUsers({ role, isActive, departmentId, search });
+    const scope = req.user.role === 'SUPER_ADMIN' ? {} : { departmentId: req.user.departmentId || '__unassigned__' };
+    const users = await db.findUsers({ ...scope, role, isActive, ...(req.user.role === 'SUPER_ADMIN' ? { departmentId } : {}), search });
 
     return res.status(200).json({
       status: 'success',
@@ -105,6 +118,7 @@ export const getUser = async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ status: 'error', message: 'User not found.' });
     }
+    if (req.user.role !== 'SUPER_ADMIN' && user.departmentId !== req.user.departmentId) return res.status(403).json({ status: 'error', message: 'User is outside your department.' });
     return res.status(200).json({ status: 'success', data: { user: withoutPassword(user) } });
   } catch (error) {
     next(error);
@@ -118,7 +132,14 @@ export const updateUser = async (req, res, next) => {
       return res.status(404).json({ status: 'error', message: 'User not found.' });
     }
 
+    if (req.user.role !== 'SUPER_ADMIN') {
+      if (existing.departmentId !== req.user.departmentId || ['ADMIN','SUPER_ADMIN'].includes(existing.role) || (req.body.role && ['ADMIN','SUPER_ADMIN'].includes(req.body.role)) || (req.body.departmentId && req.body.departmentId !== req.user.departmentId)) return res.status(403).json({ status: 'error', message: 'You cannot modify this account or its permissions.' });
+    }
+    if (existing.id === req.user.id && (req.body.isActive === false || req.body.role && req.body.role !== existing.role)) return res.status(409).json({ status: 'error', message: 'You cannot deactivate or change your own role.' });
+    const changedPermissions = req.body.role && req.body.role !== existing.role || req.body.isActive === false || req.body.departmentId !== undefined && req.body.departmentId !== existing.departmentId;
     const updatedUser = await db.updateUser(req.params.id, req.body);
+    if (changedPermissions) await db.revokeAllUserRefreshTokens(existing.id);
+    await db.createAuditLog({ actorId: req.user.id, action: 'USER_UPDATED', entityType: 'USER', entityId: existing.id, previousValue: { role: existing.role, isActive: existing.isActive, departmentId: existing.departmentId }, newValue: { role: updatedUser.role, isActive: updatedUser.isActive, departmentId: updatedUser.departmentId } });
     return res.status(200).json({
       status: 'success',
       message: 'User updated successfully.',
@@ -135,7 +156,11 @@ const setUserStatus = (isActive, message) => async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ status: 'error', message: 'User not found.' });
     }
+    if (req.user.role !== 'SUPER_ADMIN' && (user.departmentId !== req.user.departmentId || ['ADMIN','SUPER_ADMIN'].includes(user.role))) return res.status(403).json({ status: 'error', message: 'You cannot modify this account.' });
+    if (user.id === req.user.id && !isActive) return res.status(409).json({ status: 'error', message: 'You cannot deactivate your own account.' });
     const updated = await db.updateUser(req.params.id, { isActive });
+    if (!isActive) await db.revokeAllUserRefreshTokens(user.id);
+    await db.createAuditLog({ actorId: req.user.id, action: isActive ? 'USER_ACTIVATED' : 'USER_DEACTIVATED', entityType: 'USER', entityId: user.id, newValue: { isActive } });
     return res.status(200).json({
       status: 'success',
       message,

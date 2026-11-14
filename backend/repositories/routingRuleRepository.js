@@ -13,7 +13,7 @@ const routingRuleRepository = {
     };
     if (checkIsPrisma()) {
       try { return await getPrismaClient().routingRule.create({ data: rule }); }
-      catch (error) { console.warn('[DB] Prisma createRoutingRule failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     memoryStore.routingRules.set(rule.id, rule);
     return { ...rule };
@@ -25,7 +25,7 @@ const routingRuleRepository = {
           where: isActive === undefined ? {} : { isActive: isActive === true || isActive === 'true' },
           orderBy: { createdAt: 'desc' },
         });
-      } catch (error) { console.warn('[DB] Prisma findRoutingRules failed, falling back to memory:', error.message); }
+      } catch (error) { throw error; }
     }
     return [...memoryStore.routingRules.values()]
       .filter((rule) => isActive === undefined || rule.isActive === true || (isActive === 'true' && rule.isActive))
@@ -34,14 +34,14 @@ const routingRuleRepository = {
   async findRoutingRuleById(id) {
     if (checkIsPrisma()) {
       try { return await getPrismaClient().routingRule.findUnique({ where: { id } }); }
-      catch (error) { console.warn('[DB] Prisma findRoutingRuleById failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     return memoryStore.routingRules.get(id) || null;
   },
   async updateRoutingRule(id, data) {
     if (checkIsPrisma()) {
       try { return await getPrismaClient().routingRule.update({ where: { id }, data }); }
-      catch (error) { console.warn('[DB] Prisma updateRoutingRule failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     const existing = memoryStore.routingRules.get(id);
     if (!existing) return null;
@@ -52,7 +52,7 @@ const routingRuleRepository = {
   async deleteRoutingRule(id) {
     if (checkIsPrisma()) {
       try { await getPrismaClient().routingRule.delete({ where: { id } }); return true; }
-      catch (error) { console.warn('[DB] Prisma deleteRoutingRule failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     return memoryStore.routingRules.delete(id);
   },

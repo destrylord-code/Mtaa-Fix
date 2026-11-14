@@ -23,7 +23,7 @@ const officialRepository = {
       try {
         return await getPrismaClient().official.create({ data: official });
       } catch (error) {
-        console.warn('[DB] Prisma createOfficial failed, falling back to memory:', error.message);
+        throw error;
       }
     }
 
@@ -54,7 +54,7 @@ const officialRepository = {
           orderBy: { name: 'asc' },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findOfficials failed, falling back to memory:', error.message);
+        throw error;
       }
     }
 
@@ -85,7 +85,7 @@ const officialRepository = {
       try {
         return await getPrismaClient().official.findUnique({ where: { id } });
       } catch (error) {
-        console.warn('[DB] Prisma findOfficialById failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return memoryStore.officials.get(id) || null;
@@ -99,7 +99,7 @@ const officialRepository = {
           data: { ...data, updatedAt: new Date() },
         });
       } catch (error) {
-        console.warn('[DB] Prisma updateOfficial failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     const existing = memoryStore.officials.get(id);

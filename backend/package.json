@@ -16,6 +16,8 @@
     "test:officers": "node tests/test-officers.js",
     "test:operations": "node tests/test-operations.js",
     "test:monitoring": "node tests/test-escalation-dashboard-audit.js",
+    "test:live-dashboard": "node tests/test-dashboard-degraded-mode.js",
+    "test:postgres": "node scripts/test-postgres.mjs",
     "db:seed": "node prisma/seed.js",
     "db:seed:dev": "node prisma/dev-seed.js",
     "db:generate": "prisma generate",
@@ -49,6 +51,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@electric-sql/pglite-socket": "^0.2.19",
     "nodemon": "^3.1.14",
     "prisma": "^7.10.1"
   }

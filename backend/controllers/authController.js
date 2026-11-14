@@ -12,6 +12,7 @@ import {
 import {
   sendVerificationEmail,
   sendPasswordResetEmail,
+  assertEmailConfigured,
 } from '../utils/notifier.js';
 
 export const sanitizeUser = (user) => {
@@ -22,6 +23,7 @@ export const sanitizeUser = (user) => {
 
 export const register = async (req, res, next) => {
   try {
+    assertEmailConfigured();
     const {
       name,
       email,
@@ -190,7 +192,7 @@ export const login = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({
         status: 'error',
-        message: 'Invalid credentials. User not found.',
+        message: 'Invalid email/phone or password.',
       });
     }
     if (!user.isActive) {
@@ -203,7 +205,7 @@ export const login = async (req, res, next) => {
     if (!isPasswordValid) {
       return res.status(401).json({
         status: 'error',
-        message: 'Invalid credentials. Password incorrect.',
+        message: 'Invalid email/phone or password.',
       });
     }
     // Revoke any existing refresh tokens for this user so a previous
@@ -355,7 +357,9 @@ export const refreshToken = async (req, res, next) => {
       role: user.role,
     };
     const newAccessToken = generateAccessToken(tokenPayload);
-    await db.revokeRefreshToken(currentRefreshToken);
+    if (!await db.revokeRefreshToken(currentRefreshToken)) {
+      return res.status(401).json({ status: 'error', message: 'Refresh token has already been used. Please sign in again.' });
+    }
     const rotatedRefreshToken = generateRefreshToken(tokenPayload);
     const newRefreshExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
@@ -397,6 +401,8 @@ export const forgotPassword = async (req, res, next) => {
     let resetCode = null;
 
     if (user && user.isActive) {
+      assertEmailConfigured();
+      await db.deletePasswordResetTokensForUser(user.id);
       resetToken = generateSecureToken();
       resetCode = generateOtpCode();
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
@@ -468,9 +474,12 @@ export const resetPassword = async (req, res, next) => {
         message: 'User associated with this reset token was not found.',
       });
     }
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    if (!await db.consumePasswordResetToken(token)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid or expired password reset token.' });
+    }
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
     await db.updateUser(user.id, { password: hashedPassword });
-    await db.deletePasswordResetToken(token);
+    await db.deletePasswordResetTokensForUser(user.id);
     await db.revokeAllUserRefreshTokens(user.id);
     res.clearCookie('refreshToken', cookieOptions);
 
@@ -524,9 +533,19 @@ export const updateProfile = async (req, res, next) => {
 
     const { name, email, phone, avatarUrl } = req.body;
     const updatePayload = {};
+    if (email && email.toLowerCase() !== req.user.email.toLowerCase()) {
+      const existing = await db.findUserByEmail(email);
+      if (existing && existing.id !== req.user.id) return res.status(409).json({ status: 'error', message: 'Email address is already in use.' });
+      updatePayload.email = email.toLowerCase();
+      updatePayload.emailVerified = false;
+      updatePayload.isVerified = false;
+    }
+    if (phone !== undefined && phone !== req.user.phone) {
+      if (phone && await db.findUserByPhone(phone)) return res.status(409).json({ status: 'error', message: 'Phone number is already in use.' });
+      updatePayload.phone = phone || null;
+      updatePayload.phoneVerified = false;
+    }
     if (name !== undefined) updatePayload.name = name;
-    if (email !== undefined) updatePayload.email = email;
-    if (phone !== undefined) updatePayload.phone = phone;
     if (avatarUrl !== undefined) updatePayload.avatarUrl = avatarUrl;
 
     const updatedUser = await db.updateUser(req.user.id, updatePayload);

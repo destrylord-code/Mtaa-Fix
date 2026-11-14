@@ -17,13 +17,13 @@ const fieldInspectionRepository = {
     };
     if (checkIsPrisma()) {
       try {
-        return await getPrismaClient().fieldInspection.create({ data: inspection });
+        return await getPrismaClient().fieldInspection.create({ data: inspection , include: { report: true } });
       } catch (error) {
-        console.warn('[DB] Prisma createInspection failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     memoryStore.fieldInspections.set(inspection.id, inspection);
-    return { ...inspection };
+    return { ...inspection, report: memoryStore.reports.get(inspection.reportId) || null };
   },
   async findInspections({ reportId, officerId, status } = {}) {
     if (checkIsPrisma()) {
@@ -34,22 +34,23 @@ const fieldInspectionRepository = {
             ...(officerId && { officerId }),
             ...(status && { status }),
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' }, include: { report: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findInspections failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.fieldInspections.values()]
       .filter((item) => (!reportId || item.reportId === reportId)
         && (!officerId || item.officerId === officerId)
         && (!status || item.status === status))
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((item) => ({ ...item, report: memoryStore.reports.get(item.reportId) || null }));
   },
   async findInspectionById(id) {
     if (checkIsPrisma()) {
-      try { return await getPrismaClient().fieldInspection.findUnique({ where: { id } }); }
-      catch (error) { console.warn('[DB] Prisma findInspectionById failed, falling back to memory:', error.message); }
+      try { return await getPrismaClient().fieldInspection.findUnique({ where: { id }, include: { report: true } }); }
+      catch (error) { throw error; }
     }
     return memoryStore.fieldInspections.get(id) || null;
   },
@@ -58,17 +59,17 @@ const fieldInspectionRepository = {
       try {
         return await getPrismaClient().fieldInspection.update({
           where: { id },
-          data: { ...updateData, updatedAt: new Date() },
+          data: { ...updateData, updatedAt: new Date() }, include: { report: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma updateInspection failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     const existing = memoryStore.fieldInspections.get(id);
     if (!existing) return null;
     const updated = { ...existing, ...updateData, updatedAt: new Date() };
     memoryStore.fieldInspections.set(id, updated);
-    return { ...updated };
+    return { ...updated, report: memoryStore.reports.get(updated.reportId) || null };
   },
 };
 

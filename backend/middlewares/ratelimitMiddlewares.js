@@ -2,7 +2,8 @@ import rateLimit from 'express-rate-limit';
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per 15 mins
+  max: 30,
+  skipSuccessfulRequests: true, // Limit each IP to 100 requests per 15 mins
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -13,7 +14,8 @@ export const authLimiter = rateLimit({
 
 export const sensitiveAuthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Limit each IP to 1000 attempts per 15 mins (raised for E2E testing)
+  max: 10,
+  skip: () => process.env.NODE_ENV === 'test',
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -25,6 +27,7 @@ export const sensitiveAuthLimiter = rateLimit({
 export const guestReportLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
+  skip: () => process.env.NODE_ENV === 'test',
   standardHeaders: true,
   legacyHeaders: false,
   message: {

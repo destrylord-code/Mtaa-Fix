@@ -1,197 +1,79 @@
 import { isValidTransition } from './statusWorkflow.js';
 
-const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'GOVERNOR', 'CECM', 'CHIEF_OFFICER']);
-const WARD_SCOPED_ROLES = new Set(['OFFICER', 'FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'WARD_ADMIN', 'SUBCOUNTY_ADMIN']);
-const DEPARTMENT_SCOPED_ROLES = new Set(['CHIEF_OFFICER', 'TECHNICAL_HEAD', 'CECM', 'DISASTER_MANAGER', 'ENFORCEMENT_OFFICER', 'DEPARTMENTAL_ADMIN']);
-const STATUS_CHANGE_ROLES = new Set(['OFFICER', 'FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER', 'CECM', 'GOVERNOR', 'ADMIN', 'SUPER_ADMIN', 'DISASTER_MANAGER', 'ENFORCEMENT_OFFICER']);
+// These set names are retained for the existing route imports. Membership is
+// permission to reach an endpoint, NOT permission to see every record.
+export const ADMIN_ROLES = new Set(['ADMIN', 'SUPER_ADMIN', 'GOVERNOR', 'CECM', 'CHIEF_OFFICER']);
+export const WARD_SCOPED_ROLES = new Set(['OFFICER', 'FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'WARD_ADMIN', 'SUBCOUNTY_ADMIN']);
+export const DEPARTMENT_SCOPED_ROLES = new Set(['CHIEF_OFFICER', 'TECHNICAL_HEAD', 'CECM', 'DISASTER_MANAGER', 'ENFORCEMENT_OFFICER', 'DEPARTMENTAL_ADMIN', 'ADMIN']);
+export const STATUS_CHANGE_ROLES = new Set(['OFFICER', 'FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER', 'CECM', 'GOVERNOR', 'ADMIN', 'SUPER_ADMIN', 'DISASTER_MANAGER', 'ENFORCEMENT_OFFICER']);
+const ASSIGNED_ROLES = new Set(['FIELD_OFFICER', 'OFFICER']);
+const NO_SCOPE = Object.freeze({ __noAccess: true });
 
-// Role-based transition permissions:
-// - ADMIN/SUPER_ADMIN: any valid transition
-// - FIELD_OFFICER/OFFICER: field-level work (assign, inspect, work, submit resolution)
-// - TECHNICAL_SUPERVISOR: supervise and approve field work
-// - TECHNICAL_HEAD/CHIEF_OFFICER/CECM/GOVERNOR: oversight (escalate, close, reopen)
-// - WARD_ADMIN/SUBCOUNTY_ADMIN: monitoring only, no status changes
-export function canChangeStatus(user) {
-  if (!user) return false;
-  return STATUS_CHANGE_ROLES.has(user.role);
-}
+const same = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
 
-export function canPerformTransition(user, fromStatus, toStatus) {
-  if (!user || !fromStatus || !toStatus) return false;
-
-  // ADMIN/SUPER_ADMIN can perform any valid transition
-  if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true;
-
-  // WARD_ADMIN, SUBCOUNTY_ADMIN and DEPARTMENTAL_ADMIN: monitoring only, no status changes
-  if (user.role === 'WARD_ADMIN' || user.role === 'SUBCOUNTY_ADMIN' || user.role === 'DEPARTMENTAL_ADMIN') return false;
-
-  // The transition must be valid per the workflow state machine
-  if (!isValidTransition(fromStatus, toStatus)) return false;
-
-  // FIELD_OFFICER and OFFICER: field-level work only
-  // Cannot close, reopen, or escalate (those are oversight actions)
-  if (user.role === 'FIELD_OFFICER' || user.role === 'OFFICER') {
-    if (toStatus === 'CLOSED' || toStatus === 'REOPENED' || toStatus === 'ESCALATED') return false;
-    return true;
+/** One fail-closed scope implementation for lists, details, and dashboards. */
+export function scopeReportQuery(user, query = {}) {
+  if (!user) return { ...query, ...NO_SCOPE };
+  if (user.role === 'SUPER_ADMIN') return { ...query };
+  if (user.role === 'GOVERNOR') {
+    return { ...query, ...(user.countyId ? { countyId: user.countyId } : { county: user.county || 'Kisii' }) };
   }
-
-  // TECHNICAL_SUPERVISOR: can supervise and approve, but not close
+  if (user.role === 'CITIZEN') return { ...query, reporterId: user.id };
+  if (ASSIGNED_ROLES.has(user.role)) return { ...query, assignedOfficerId: user.id };
+  if (user.role === 'SUBCOUNTY_ADMIN') {
+    if (user.subCountyId) return { ...query, subCountyId: user.subCountyId };
+    if (user.subCounty) return { ...query, subCounty: user.subCounty };
+    return { ...query, ...NO_SCOPE };
+  }
+  if (user.role === 'WARD_ADMIN') {
+    if (user.wardId) return { ...query, wardId: user.wardId };
+    if (user.ward) return { ...query, ward: user.ward, ...(user.subCounty ? { subCounty: user.subCounty } : {}) };
+    return { ...query, ...NO_SCOPE };
+  }
   if (user.role === 'TECHNICAL_SUPERVISOR') {
-    if (toStatus === 'CLOSED') return false;
-    return true;
+    if (!user.departmentId) return { ...query, ...NO_SCOPE };
+    return { ...query, departmentId: user.departmentId,
+      ...(user.wardId ? { wardId: user.wardId } : user.ward ? { ward: user.ward } : {}) };
   }
-
-  // TECHNICAL_HEAD, CHIEF_OFFICER, CECM, GOVERNOR: oversight roles
-  // Can perform any valid transition (escalate, close, reopen, etc.)
-  return true;
+  if (DEPARTMENT_SCOPED_ROLES.has(user.role)) {
+    return user.departmentId ? { ...query, departmentId: user.departmentId } : { ...query, ...NO_SCOPE };
+  }
+  return { ...query, ...NO_SCOPE };
 }
+
+export const scopeDashboardQuery = scopeReportQuery;
 
 export function canAccessReport(user, report) {
   if (!user || !report) return false;
-  if (ADMIN_ROLES.has(user.role)) return true;
-  if (user.role === 'CITIZEN') {
-    return report.reporterId === user.id || !report.isAnonymous;
-  }
-  // Field Officer: only their personally assigned reports.
-  if (user.role === 'FIELD_OFFICER') {
-    return report.assignedOfficerId === user.id;
-  }
-  // Technical Supervisor: reports in their ward AND department.
-  if (user.role === 'TECHNICAL_SUPERVISOR') {
-    if (user.wardId && report.wardId && user.wardId !== report.wardId) return false;
-    if (user.departmentId && report.departmentId && user.departmentId !== report.departmentId) return false;
-    return true;
-  }
-  // Ward-scoped roles: must match ward (denormalized string primary, FK
-  // confirmation secondary) and sub-county. The string comparison works across
-  // the memoryStore / database boundary where wardId FKs may differ.
-  if (WARD_SCOPED_ROLES.has(user.role)) {
-    // FK mismatch when both sides have FKs
-    if (user.wardId && report.wardId && user.wardId !== report.wardId) return false;
-    // Denormalized ward name match
-    if (user.ward && report.ward && user.ward !== report.ward) return false;
-    // If the user is ward-bound but the report has no ward info at all,
-    // membership cannot be confirmed.
-    if (user.wardId && !report.ward && !report.wardId) return false;
-    if (user.ward && !report.ward && !report.wardId) return false;
-    // Sub-county confirmation
-    if (user.subCountyId && report.subCountyId && user.subCountyId !== report.subCountyId) return false;
-    if (user.subCounty && report.subCounty && user.subCounty !== report.subCounty) return false;
-    return true;
-  }
-  // Department-scoped roles: must match department
-  if (DEPARTMENT_SCOPED_ROLES.has(user.role)) {
-    if (user.departmentId && report.departmentId && user.departmentId !== report.departmentId) return false;
-    return true;
-  }
-  return false;
+  const scope = scopeReportQuery(user);
+  if (scope.__noAccess) return false;
+  return Object.entries(scope).every(([key, value]) => {
+    if (['page', 'limit', 'sortBy', 'sortOrder'].includes(key)) return true;
+    if (['ward', 'county', 'subCounty'].includes(key)) return report[key] != null && same(report[key], value);
+    return report[key] === value;
+  });
 }
 
-export function scopeReportQuery(user, query = {}) {
-  if (!user || ADMIN_ROLES.has(user.role)) return query;
-  // Field Officer: only personally assigned reports.
-  if (user.role === 'FIELD_OFFICER' && user.id) {
-    return { ...query, assignedOfficerId: user.id };
-  }
-  // Technical Supervisor: their ward AND department.
-  if (user.role === 'TECHNICAL_SUPERVISOR') {
-    if (user.wardId && user.departmentId) {
-      return { ...query, wardId: user.wardId, departmentId: user.departmentId };
-    }
-    if (user.wardId) return { ...query, wardId: user.wardId };
-    if (user.departmentId) return { ...query, departmentId: user.departmentId };
-  }
-  // Ward-scoped roles: scope via denormalized ward string first (works across
-  // memoryStore / database boundary), then wardId FK.
-  if (WARD_SCOPED_ROLES.has(user.role)) {
-    if (user.ward) return { ...query, ward: user.ward };
-    if (user.wardId) return { ...query, wardId: user.wardId };
-  }
-  if (DEPARTMENT_SCOPED_ROLES.has(user.role) && user.departmentId) {
-    return { ...query, departmentId: user.departmentId };
-  }
-  return query;
-}
-
-/**
- * Scope a dashboard query to the caller's jurisdiction.
- *
- * Dashboard scoping is stricter than the general report-list scoping for
- * executive/oversight roles:
- *   - GOVERNOR / ADMIN / SUPER_ADMIN : no scope (county-wide / system-wide)
- *   - CECM / CHIEF_OFFICER / TECHNICAL_HEAD : assigned department only
- *   - WARD-scoped roles : assigned ward only
- *
- * This keeps the existing `scopeReportQuery` (used by the public report list)
- * unchanged while giving dashboards role-appropriate data.
- */
-export function scopeDashboardQuery(user, query = {}) {
-  if (!user) return query;
-  // County-wide / system-wide oversight: see everything.
-  if (
-    user.role === 'GOVERNOR' ||
-    user.role === 'ADMIN' ||
-    user.role === 'SUPER_ADMIN'
-  ) {
-    return query;
-  }
-  // Department-scoped oversight roles see only their department's reports.
-  // Covers CECM, Chief Officer, Technical Head, Disaster Manager, Enforcement Officer.
-  if (DEPARTMENT_SCOPED_ROLES.has(user.role) && user.departmentId) {
-    return { ...query, departmentId: user.departmentId };
-  }
-  // Sub-County Administrator: see all reports within their sub-county.
-  if (user.role === 'SUBCOUNTY_ADMIN' && user.subCountyId) {
-    return { ...query, subCountyId: user.subCountyId };
-  }
-  // Ward-scoped operational roles see only their ward's reports.
-  if (WARD_SCOPED_ROLES.has(user.role) && user.wardId) {
-    return { ...query, wardId: user.wardId };
-  }
-  return query;
-}
-
-/**
- * Build jurisdiction scope filters for escalation queries.
- * Escalations are scoped through their parent report's jurisdiction.
- * Mirrors scopeDashboardQuery so a user only sees escalations for reports
- * they are authorized to view.
- */
 export function buildEscalationScope(user) {
-  if (!user) return {};
-  // County-wide / system-wide oversight: see all escalations.
-  if (
-    user.role === 'GOVERNOR' ||
-    user.role === 'ADMIN' ||
-    user.role === 'SUPER_ADMIN'
-  ) {
-    return {};
-  }
-  // Field Officer: only escalations on their personally assigned reports.
-  if (user.role === 'FIELD_OFFICER' && user.id) {
-    return { report: { assignedOfficerId: user.id } };
-  }
-  // Department-scoped oversight roles: escalations on their department's reports.
-  if (DEPARTMENT_SCOPED_ROLES.has(user.role) && user.departmentId) {
-    return { report: { departmentId: user.departmentId } };
-  }
-  // Technical Supervisor: escalations on reports in their ward and department.
-  if (user.role === 'TECHNICAL_SUPERVISOR') {
-    if (user.wardId && user.departmentId) {
-      return { report: { wardId: user.wardId, departmentId: user.departmentId } };
-    }
-    if (user.wardId) return { report: { wardId: user.wardId } };
-    if (user.departmentId) return { report: { departmentId: user.departmentId } };
-  }
-  // Sub-County Administrator: escalations on reports in their sub-county.
-  if (user.role === 'SUBCOUNTY_ADMIN' && user.subCountyId) {
-    return { report: { subCountyId: user.subCountyId } };
-  }
-  // Ward-scoped operational roles: escalations on reports in their ward.
-  if (WARD_SCOPED_ROLES.has(user.role) && user.wardId) {
-    return { report: { wardId: user.wardId } };
-  }
-  return {};
+  const scope = scopeReportQuery(user);
+  if (!Object.keys(scope).length) return {};
+  return { report: scope };
 }
 
-export { ADMIN_ROLES, WARD_SCOPED_ROLES, DEPARTMENT_SCOPED_ROLES, STATUS_CHANGE_ROLES };
+export function canChangeStatus(user) {
+  return Boolean(user && STATUS_CHANGE_ROLES.has(user.role));
+}
+
+export function canPerformTransition(user, fromStatus, toStatus) {
+  if (!canChangeStatus(user) || !fromStatus || !toStatus) return false;
+  if (!isValidTransition(fromStatus, toStatus)) return false;
+  if (['WARD_ADMIN', 'SUBCOUNTY_ADMIN', 'DEPARTMENTAL_ADMIN'].includes(user.role)) return false;
+  if (ASSIGNED_ROLES.has(user.role)) return !['CLOSED', 'REOPENED', 'ESCALATED', 'RESOLVED'].includes(toStatus);
+  if (user.role === 'TECHNICAL_SUPERVISOR') return toStatus !== 'CLOSED';
+  return true;
+}
+
+/** Staff may see reporter contact details only for a report in their scope. */
+export function canSeeReporterIdentity(user, report) {
+  return Boolean(user && canAccessReport(user, report) && (user.role !== 'CITIZEN' || report.reporterId === user.id));
+}

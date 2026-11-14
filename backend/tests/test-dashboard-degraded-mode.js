@@ -1,3 +1,4 @@
+import './setup.js';
 import http from 'http';
 import app from '../index.js';
 
