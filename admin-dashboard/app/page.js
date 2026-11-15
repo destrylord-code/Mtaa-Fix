@@ -123,7 +123,8 @@ function normalizeReport(report, index) {
 
   return {
     id: String(
-      report.reportNumber ||
+      report.referenceCode ||
+        report.reportNumber ||
         report.referenceNumber ||
         report.id ||
         `report-${index + 1}`
@@ -203,13 +204,6 @@ export default function AdminDashboard() {
   // System health state.
   const [systemHealth, setSystemHealth] = useState(null);
   const [systemHealthLoading, setSystemHealthLoading] = useState(false);
-
-  useEffect(() => {
-    if (!systemHealthLoading && !user) {
-      const redirectTo = window.location.pathname;
-      router.replace(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
-    }
-  }, [systemHealthLoading, user, router]);
 
   const checkSystemHealth = useCallback(async () => {
     setSystemHealthLoading(true);

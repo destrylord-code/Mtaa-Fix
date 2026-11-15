@@ -73,12 +73,14 @@ export default function GuestReportPage() {
         throw new Error(result.message || "Unable to submit your report. Please try again.");
       }
 
-      const submittedId = result?.data?.report?.id;
-      if (!submittedId) {
+      const submittedReport = result?.data?.report;
+      const submittedRef =
+        submittedReport?.referenceCode || submittedReport?.reference || submittedReport?.id;
+      if (!submittedRef) {
         throw new Error("The report was submitted, but no reference number was returned.");
       }
 
-      setReportId(submittedId);
+      setReportId(submittedRef);
       setForm(initialForm);
     } catch (submitError) {
       setError(submitError.message || "Unable to submit your report. Please try again.");
@@ -225,7 +227,7 @@ export default function GuestReportPage() {
 
           <p className="mt-6 text-center text-sm text-[#66776f]">
             Want to track reports and receive updates?{" "}
-            <Link href="/create-account" className="font-semibold text-[#187a58] hover:underline">
+            <Link href="/create-account" className="inline-block py-1 font-semibold text-[#187a58] hover:underline">
               Create an account
             </Link>
           </p>

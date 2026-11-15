@@ -433,7 +433,7 @@ export default function CitizenDashboard() {
               }} />
             )}
             {activePage === "My Reports" && (
-              <MyReports token={token} />
+              <MyReports token={token} onReportClick={() => navigateTo("Report an Issue")} />
             )}
             {activePage === "My Profile" && (
               <Profile token={token} user={user} reports={reports} onLogout={handleLogout} />

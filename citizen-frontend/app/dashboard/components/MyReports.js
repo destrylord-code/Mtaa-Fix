@@ -24,7 +24,7 @@ const STATUS_OPTIONS = [
   "Escalated",
 ];
 
-export default function MyReports({ token }) {
+export default function MyReports({ token, onReportClick }) {
   const router = useRouter();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +75,7 @@ export default function MyReports({ token }) {
     const query = searchTerm.trim().toLowerCase();
     const matchesSearch =
       report.id.toLowerCase().includes(query) ||
+      String(report.referenceCode || "").toLowerCase().includes(query) ||
       String(report.title || "").toLowerCase().includes(query) ||
       String(report.category || "").toLowerCase().includes(query) ||
       String(report.location || "").toLowerCase().includes(query);
@@ -122,6 +123,7 @@ export default function MyReports({ token }) {
         {reports.length === 0 && (
           <button
             type="button"
+            onClick={() => (onReportClick ? onReportClick() : router.push("/report-issue"))}
             className="mt-5 bg-[#244637] px-5 py-3 text-sm font-semibold text-white hover:bg-[#19372a]"
           >
             Report an Issue
@@ -139,7 +141,7 @@ export default function MyReports({ token }) {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-[#55745c]">
-                {report.id}
+                {report.referenceCode || report.id}
               </p>
               <h3 className="mt-2 text-lg font-semibold capitalize">{toSentenceCase(report.title)}</h3>
               <p className="mt-2 text-sm text-[#687468]">

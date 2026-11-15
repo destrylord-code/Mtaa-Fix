@@ -131,7 +131,7 @@ function normalizeReport(report) {
 
   return {
     id: String(
-      report.reportNumber || report.referenceNumber || report.id || "Unknown"
+      report.referenceCode || report.reportNumber || report.referenceNumber || report.id || "Unknown"
     ),
     originalId: report.id,
     issue: getText(report.title || report.issue, "Untitled report"),

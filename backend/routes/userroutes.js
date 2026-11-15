@@ -30,11 +30,16 @@ const putRoute = (path, ...handlers) => {
 };
 
 getRoute('/', validate(userQuerySchema, 'query'), ...adminOnly, getUsers);
-getRoute('/:id', ...adminOnly, getUser);
 
-// Department-scoped officer list for assignment forms
+// Department-scoped officer list for assignment forms.
+// NOTE: must be registered BEFORE the dynamic '/:id' route below, otherwise
+// Express matches '/officers' as '/:id' (id="officers") and applies the
+// admin-only guard, returning 403 for governor/CECM/supervisor roles.
 const deptReadRoles = [...new Set([...ADMIN_ROLES, ...WARD_SCOPED_ROLES, ...DEPARTMENT_SCOPED_ROLES])];
 router.get('/officers', ...[authenticate, authorizeRoles(...deptReadRoles)], validate(userQuerySchema, 'query'), getOfficers);
+router.get('/api/users/officers', ...[authenticate, authorizeRoles(...deptReadRoles)], validate(userQuerySchema, 'query'), getOfficers);
+
+getRoute('/:id', ...adminOnly, getUser);
 
 postRoute('/', ...adminOnly, validate(createUserSchema), createUser);
 putRoute('/:id', ...adminOnly, validate(updateUserSchema), updateUser);
