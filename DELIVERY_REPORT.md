@@ -21,6 +21,7 @@ Branch: `arena/967bb648-mtaa-fix` (base `fe6e12f`)
 - Reproducible PostgreSQL integration harness (`npm run test:postgres`) using PGlite as a development-only test database.
 - Self-hosted Geist fonts for citizen and government production builds.
 - Delivery/verification documentation and updated deployment environment reference.
+- Government workspace views: ~40 sidebar destinations across roles (personnel directories, department/ward/officer performance, workload, assignments, work/assessment filters, department/sub-county/ward directories, role assignments, audit trails, and read-only configuration) previously rendered an empty body. They now show real, jurisdiction-scoped data via a shared `WorkspaceSection` component driven by the existing reports/users/officers/assignments/locations/audit APIs. A full navigation audit confirms 0 empty tabs across all 14 roles.
 
 ## 3. Features repaired
 
@@ -45,6 +46,9 @@ Branch: `arena/967bb648-mtaa-fix` (base `fe6e12f`)
 - Citizen build-blocking remote fonts, wrong login route/ports/roles, hardcoded guest categories.
 - Admin dead refresh branch and mock report dataset.
 - Historical migration failure converting `escalations.status` to enum.
+- Government "Create User"/"Edit User"/"Deactivate User" sidebar items rendered an empty body; they now show the users table with the existing action dialogs. ADMIN/SUPER_ADMIN were missing the Notifications sidebar item every other role had.
+- Inconsistent password minimum: the auth validator enforced 10 characters but its messages said 6, while user/officer creation and all frontend forms used 6. Standardized on 10 across validators, messages, and forms.
+- ~40 government sidebar destinations rendered only the shell header (no content). Added shared workspace views backed by live data so every destination is functional.
 
 ## 5. Backend/DB improvements
 
@@ -82,7 +86,9 @@ Branch: `arena/967bb648-mtaa-fix` (base `fe6e12f`)
 | Citizen `npm run build` | PASS — 14 routes |
 | Admin `npm run build` | PASS — 15 routes |
 | Government `npm run build` | PASS — 12 routes |
-| Browser crawl (Playwright + bundled Chromium) | PASS — 14 government roles, 280 pages, 0 layout flags, 0 page errors, 0 HTTP errors |
+| Browser crawl (Playwright + bundled Chromium) | PASS — 14 government roles, 282 pages, 0 page errors, 0 HTTP errors (1 benign Leaflet-attribution layout note) |
+| Password policy through proxy | PASS — 6-char registration rejected (400, "at least 10 characters"), 10-char accepted (201) |
+| Navigation emptiness audit (all sidebar tabs, 14 roles) | PASS — 0 dead-end/empty tabs, 0 errors (was ~40 empty tabs before the workspace views) |
 | Admin/citizen/gov browser captures | PASS — desktop & mobile `docW == viewport`, 0 console/page/HTTP errors (scrollable-table & skip-link audit notes are known false positives) |
 | Same-origin proxy (curl, localhost + preview origin) | PASS — login, scoped data, cookie-only evidence download (200) and no-auth rejection (401) on all three frontends; government `/api/session` not shadowed |
 
@@ -115,6 +121,9 @@ Never commit `.env*` files. Generate JWT secrets with `openssl rand -base64 32`.
 - `cf78d86` — Documentation/hygiene: delivery report, accurate README/DEPLOYMENT, ignore local artifacts, untrack env files and runtime uploads
 - `8db8c7e` — Government shared ReportsTable, reference codes, responsive shell, user-management dialog, officer endpoint scoping; admin/citizen reference-code and overflow fixes
 - `06f5541` — Same-origin API proxy so frontends work behind any host/preview (relative API base, rewrites, admin guard exclusion, role-cookie media auth, docs)
+- `f5fdd92` — Record the proxy fix and actual browser verification results in the delivery report
+- `7cb77c8` — Complete user-management tabs, add admin/super-admin Notifications, standardize the password minimum at 10
+- `1b43842` — Render every government sidebar destination with live workspace views (eliminates ~40 dead-end tabs)
 
 Push status: pushed to `origin/arena/967bb648-mtaa-fix`; `main` was not modified or force-pushed.
 
