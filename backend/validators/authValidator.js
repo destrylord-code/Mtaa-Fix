@@ -11,7 +11,7 @@ export const registerSchema = z.object({
     .or(z.literal('')),
   password: z
     .string()
-    .min(10, 'Password must be at least 6 characters long')
+    .min(10, 'Password must be at least 10 characters long')
     .max(100),
   county: z.string().trim().max(100).optional(),
   subCounty: z.string().trim().max(100).optional(),
@@ -64,7 +64,7 @@ export const resetPasswordSchema = z.object({
   token: z.string().trim().min(1, 'Reset token or code is required'),
   newPassword: z
     .string()
-    .min(10, 'New password must be at least 6 characters long')
+    .min(10, 'New password must be at least 10 characters long')
     .max(100),
   confirmPassword: z.string().optional(),
 });

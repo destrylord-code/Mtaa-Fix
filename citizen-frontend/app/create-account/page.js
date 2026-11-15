@@ -39,8 +39,8 @@ export default function CreateAccountPage() {
       setError("The passwords do not match.");
       return;
     }
-    if (password.length < 6) {
-      setError("Use at least 6 characters for your password.");
+    if (password.length < 10) {
+      setError("Use at least 10 characters for your password.");
       return;
     }
 
@@ -190,7 +190,7 @@ export default function CreateAccountPage() {
           <div>
             <label htmlFor="account-password" className="mb-2 block text-sm font-semibold">Password</label>
             <div className="flex rounded-xl border border-[#cddbd1] focus-within:border-[#187a58] focus-within:ring-4 focus-within:ring-[#187a58]/10">
-              <input id="account-password" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={6} maxLength={100} required value={password} onChange={(event) => setPassword(event.target.value)} className="min-h-12 min-w-0 flex-1 rounded-l-xl px-4 py-3 outline-none" />
+              <input id="account-password" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={10} maxLength={100} required value={password} onChange={(event) => setPassword(event.target.value)} className="min-h-12 min-w-0 flex-1 rounded-l-xl px-4 py-3 outline-none" />
               <button type="button" onClick={() => setShowPassword((value) => !value)} className="rounded-r-xl px-4 text-sm font-semibold text-[#187a58] hover:bg-[#f2f7f3]" aria-label={showPassword ? "Hide password" : "Show password"}>
                 {showPassword ? "Hide" : "Show"}
               </button>
@@ -198,7 +198,7 @@ export default function CreateAccountPage() {
           </div>
           <div>
             <label htmlFor="account-confirm-password" className="mb-2 block text-sm font-semibold">Confirm password</label>
-            <input id="account-confirm-password" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={6} maxLength={100} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={inputClass} />
+            <input id="account-confirm-password" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={10} maxLength={100} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={inputClass} />
           </div>
           <p className="text-xs leading-5 text-[#66776f]">Public registrations create citizen accounts. Officer and administrator access is assigned through the existing administrator process.</p>
           <button type="submit" disabled={busy} className="min-h-12 w-full rounded-xl bg-[#187a58] px-5 py-3 text-sm font-semibold text-white hover:bg-[#126448] disabled:cursor-wait disabled:opacity-60">

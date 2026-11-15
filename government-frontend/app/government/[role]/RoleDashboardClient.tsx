@@ -3086,15 +3086,24 @@ export default function RoleDashboardClient() {
       )}
 
       {/* Platform Admin: All Users */}
-      {(activeLower === "all users" || activeLower === "government users") && (
+      {(activeLower === "all users" || activeLower === "government users" ||
+        activeLower === "create user" || activeLower === "edit user" || activeLower === "deactivate user") && (
         <section className="rounded-xl border border-[#dce2d8] bg-[#fdfdf9] p-6">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="text-xl font-semibold text-[#173c32]">
-                {activeLower === "all users" ? "All Users" : "Government Users"}
+                {activeItem}
               </h3>
               <p className="mt-1 text-sm text-[#687468]">
-                Manage platform users and their roles.
+                {activeLower === "create user"
+                  ? "Add a new platform user with the Create User button, or manage existing users below."
+                  : activeLower === "edit user"
+                    ? "Select a user below and choose Edit to update their details."
+                    : activeLower === "deactivate user"
+                      ? "Select a user below and choose Deactivate or Activate to change their account status."
+                      : activeLower === "government users"
+                        ? "Manage government officer accounts and their roles."
+                        : "Manage platform users and their roles."}
               </p>
             </div>
             <button
@@ -3372,7 +3381,7 @@ export default function RoleDashboardClient() {
                   name="password"
                   type="password"
                   required
-                  minLength={6}
+                  minLength={10}
                   className="w-full px-3 py-2 border border-[#cbd6c8] rounded-lg text-sm focus:outline-none focus:border-[#187a58] bg-white"
                 />
               </div>

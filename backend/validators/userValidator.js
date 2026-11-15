@@ -17,7 +17,7 @@ export const createUserSchema = z.object({
   name: z.string().trim().min(2).max(100),
   email: z.string().trim().email(),
   phone: phoneSchema,
-  password: z.string().min(6).max(100),
+  password: z.string().min(10, 'Password must be at least 10 characters long').max(100),
   role: roleSchema.default('OFFICER'),
   county: z.string().trim().max(100).optional(),
   subCounty: z.string().trim().max(100).optional(),

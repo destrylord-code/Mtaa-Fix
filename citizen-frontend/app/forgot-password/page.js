@@ -63,8 +63,8 @@ export default function ForgotPasswordPage() {
       setBusy(false);
       return;
     }
-    if (newPassword.length < 6) {
-      setError("Use at least 6 characters for your new password.");
+    if (newPassword.length < 10) {
+      setError("Use at least 10 characters for your new password.");
       setBusy(false);
       return;
     }
@@ -135,11 +135,11 @@ export default function ForgotPasswordPage() {
             </div>
             <div>
               <label htmlFor="new-password" className="mb-2 block text-sm font-semibold">New password</label>
-              <input id="new-password" type="password" autoComplete="new-password" minLength={6} maxLength={100} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className={inputClass} />
+              <input id="new-password" type="password" autoComplete="new-password" minLength={10} maxLength={100} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className={inputClass} />
             </div>
             <div>
               <label htmlFor="confirm-new-password" className="mb-2 block text-sm font-semibold">Confirm new password</label>
-              <input id="confirm-new-password" type="password" autoComplete="new-password" minLength={6} maxLength={100} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={inputClass} />
+              <input id="confirm-new-password" type="password" autoComplete="new-password" minLength={10} maxLength={100} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={inputClass} />
             </div>
             <button type="submit" disabled={busy} className="min-h-12 w-full rounded-xl bg-[#187a58] px-5 py-3 text-sm font-semibold text-white hover:bg-[#126448] disabled:cursor-wait disabled:opacity-60">
               {busy ? "Updating password…" : "Set New Password"}

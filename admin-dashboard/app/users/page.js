@@ -160,8 +160,8 @@ export default function UsersPage() {
       return;
     }
 
-    if (form.password.length < 6) {
-      setError("The initial password must contain at least 6 characters.");
+    if (form.password.length < 10) {
+      setError("The initial password must contain at least 10 characters.");
       return;
     }
 
@@ -329,9 +329,9 @@ export default function UsersPage() {
                 value={form.password}
                 onChange={updateField}
                 className={inputClass}
-                placeholder="At least 6 characters"
+                placeholder="At least 10 characters"
                 autoComplete="new-password"
-                minLength={6}
+                minLength={10}
                 maxLength={100}
                 required
               />
