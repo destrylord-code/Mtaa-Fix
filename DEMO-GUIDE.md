@@ -26,16 +26,15 @@ map tiles). Everything is seeded with realistic Kisii County data automatically.
 
 ### Step 2 — Get the project onto your laptop
 If you already have the project folder with all the latest fixes, skip this.
-Otherwise, in the terminal, clone the **working branch** (this has all the fixes
-and the demo launcher — the default `main` branch is the old code):
+Otherwise, in the terminal, clone the repository (all fixes and the demo launcher
+are now on the default `main` branch):
 ```powershell
 cd $HOME\Documents
-git clone --branch arena/967bb648-mtaa-fix https://github.com/destrylord-code/Mtaa-Fix.git
+git clone https://github.com/destrylord-code/Mtaa-Fix.git
 cd Mtaa-Fix
 ```
-(If you don't have Git: on the GitHub page switch the branch dropdown to
-`arena/967bb648-mtaa-fix`, then **Code → Download ZIP**, extract it, and `cd` into
-the extracted folder instead.)
+(If you don't have Git: on the GitHub page click **Code → Download ZIP**, extract
+it, and `cd` into the extracted folder instead.)
 
 ### Step 3 — Install all dependencies (one command)
 From the project root folder:
