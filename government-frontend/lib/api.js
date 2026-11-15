@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const TOKEN_KEY = 'crs_government_access_token';
 const SESSION_COOKIE_PATH = '/api/session';
 

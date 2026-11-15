@@ -65,7 +65,7 @@ export function formatFileSize(size) {
 export function resolveMediaUrl(path, apiBaseUrl) {
   if (!path) return "";
   if (/^https?:\/\//i.test(path)) return path;
-  const base = apiBaseUrl || "http://localhost:5000";
+  const base = apiBaseUrl || "";
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 

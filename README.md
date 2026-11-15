@@ -276,6 +276,12 @@ npm run dev -- --port 3000
 | Admin Dashboard | 3001 | System administration |
 | Government Frontend | 302 | Government officer dashboard |
 
+Each frontend calls the API on **same-origin relative paths** (`/api/*`,
+`/uploads/*`, `/health`); `next.config.mjs` rewrites proxy them to the backend
+server-side. Leave `NEXT_PUBLIC_API_URL` empty (the default) and set `BACKEND_URL`
+only if the backend is not at `http://localhost:5000`. No frontend `.env` is
+required for local development. See [DEPLOYMENT.md](DEPLOYMENT.md) for production.
+
 ### 4. Run all applications together
 
 From the repository root:
@@ -306,13 +312,22 @@ The backend connects via `DATABASE_URL`. For Supabase connection pooling (port 6
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `JWT_SECRET` | Yes | Access token signing key |
 | `JWT_REFRESH_SECRET` | Yes | Refresh token signing key |
-| `CLIENT_URL` | Yes | Comma-separated allowed CORS origins |
+| `CLIENT_URL` | Yes | Comma-separated frontend origins the backend trusts (the browser sends its origin on write requests, forwarded by the proxy) |
 | `RESEND_API_KEY` | No | Email delivery (falls back to console log) |
 | `CLOUDINARY_*` | No | Image storage (falls back to private local uploads) |
 | `EMAIL_FROM` | Production email | Verified Resend sender address |
 | `PGSSL_REJECT_UNAUTHORIZED` | No | Set `false` only for trusted local/test DBs; default verifies TLS |
 | `TRUST_PROXY` | No | Set `1` when behind exactly one trusted reverse proxy |
 | `UPLOAD_DIR` | No | Local evidence directory (default `backend/uploads`) |
+
+Frontend variables (each Next.js app):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_API_URL` | No | Browser-side API base. Leave empty to use the same-origin proxy (recommended). |
+| `BACKEND_URL` | No | Server-side proxy target for `next.config.mjs` rewrites (default `http://localhost:5000`). |
+| `ALLOWED_DEV_ORIGINS` | No | Dev-only hostnames allowed to load `/_next/*` dev resources behind a preview proxy. Ignored in production. |
+| `NEXT_PUBLIC_*_APP_URL` | No | Public frontend origins for cross-dashboard handoff links. |
 
 ## Testing
 

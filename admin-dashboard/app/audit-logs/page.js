@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AdminShell } from "../components/AdminShell";
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 function getAdminToken() {
