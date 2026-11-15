@@ -10,6 +10,7 @@ import { StatCard, EmptyState, LoadingState, ErrorState } from "../../../compone
 import StatusBadge from "../../../components/StatusBadge";
 import GovernmentMapLoader from "../../../components/GovernmentMapLoader";
 import ReportsTable from "../../../components/ReportsTable";
+import WorkspaceSection, { WORKSPACE_TABS } from "../../../components/WorkspaceSection";
 import { X } from "lucide-react";
 
 const API_URL = (
@@ -491,6 +492,85 @@ export default function RoleDashboardClient() {
   const [deactivateDialogLoading, setDeactivateDialogLoading] = useState(false);
   const [deactivateTarget, setDeactivateTarget] = useState<any>(null);
 
+  // Data for the generic workspace views (personnel, performance, assignments,
+  // structure directories, audit). Loaded on demand when a matching tab opens.
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [directoryOfficers, setDirectoryOfficers] = useState<any[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [subCounties, setSubCounties] = useState<any[]>([]);
+  const [wards, setWards] = useState<any[]>([]);
+  const [structureLoading, setStructureLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  const loadAssignments = useCallback(async () => {
+    setAssignmentsLoading(true);
+    try {
+      const res = await apiFetch('/api/assignments', { cache: 'no-store' });
+      setAssignments(res?.data?.assignments ?? []);
+    } catch {
+      setAssignments([]);
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }, []);
+
+  const loadDirectoryOfficers = useCallback(async () => {
+    setDirectoryLoading(true);
+    try {
+      const res = await apiFetch('/api/users/officers', { cache: 'no-store' });
+      setDirectoryOfficers(res?.data?.officers ?? res?.data?.users ?? []);
+    } catch {
+      setDirectoryOfficers([]);
+    } finally {
+      setDirectoryLoading(false);
+    }
+  }, []);
+
+  const loadStructure = useCallback(async () => {
+    setStructureLoading(true);
+    try {
+      const countyRes = await apiFetch('/api/locations/counties?search=Kisii', { cache: 'no-store' });
+      const counties = countyRes?.data?.counties ?? countyRes?.data ?? [];
+      const kisii = Array.isArray(counties) ? counties.find((c: any) => /kisii/i.test(c.name)) ?? counties[0] : null;
+      if (kisii?.id) {
+        const scRes = await apiFetch(`/api/locations/counties/${kisii.id}/sub-counties`, { cache: 'no-store' });
+        const scs = scRes?.data?.subCounties ?? scRes?.data ?? [];
+        setSubCounties(Array.isArray(scs) ? scs : []);
+        const wardLists = await Promise.all(
+          (Array.isArray(scs) ? scs : []).map(async (sc: any) => {
+            try {
+              const wRes = await apiFetch(`/api/locations/sub-counties/${sc.id}/wards`, { cache: 'no-store' });
+              const ws = wRes?.data?.wards ?? wRes?.data ?? [];
+              return (Array.isArray(ws) ? ws : []).map((w: any) => ({ ...w, subCountyName: sc.name }));
+            } catch {
+              return [];
+            }
+          }),
+        );
+        setWards(wardLists.flat());
+      }
+    } catch {
+      setSubCounties([]);
+      setWards([]);
+    } finally {
+      setStructureLoading(false);
+    }
+  }, []);
+
+  const loadAuditLogs = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const res = await apiFetch('/api/audit-logs?limit=100', { cache: 'no-store' });
+      setAuditLogs(res?.data?.auditLogs ?? res?.data?.logs ?? res?.data ?? []);
+    } catch {
+      setAuditLogs([]);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
     try {
@@ -749,7 +829,34 @@ export default function RoleDashboardClient() {
     } else if (item === "notifications") {
       void loadNotifications();
     }
-  }, [activeItem, loadInspections, loadWorkUpdates, loadFollowUps, loadResolutions, loadEscalations, loadNotifications]);
+
+    // Generic workspace views: load the data each destination needs.
+    const personnelTabs = ["chief officers", "field officers", "technical supervisors", "technical officers", "departmental teams", "field team", "personnel directory", "authorized user management"];
+    const assignmentTabs = ["all assignments", "new assignments", "team assignments", "assignment history", "assignment monitoring"];
+    const structureTabs = ["departments", "sub-counties", "wards", "ward directory"];
+    const auditTabs = ["authentication activity", "administrative actions", "decisions history"];
+    const workTabs = ["awaiting review", "approved assessments", "rejected assessments", "verified work", "rejected work", "active projects", "delayed projects", "technical resolution reports"];
+    if (personnelTabs.includes(item)) {
+      void loadDirectoryOfficers();
+    }
+    if (assignmentTabs.includes(item)) {
+      void loadAssignments();
+    }
+    if (structureTabs.includes(item)) {
+      void loadStructure();
+    }
+    if (auditTabs.includes(item) && (role === "ADMIN" || role === "SUPER_ADMIN")) {
+      void loadAuditLogs();
+    }
+    if (workTabs.includes(item)) {
+      void loadWorkUpdates();
+      void loadResolutions();
+    }
+    if (item === "decisions history") {
+      void loadEscalations();
+      void loadResolutions();
+    }
+  }, [activeItem, role, loadInspections, loadWorkUpdates, loadFollowUps, loadResolutions, loadEscalations, loadNotifications, loadDirectoryOfficers, loadAssignments, loadStructure, loadAuditLogs]);
 
   // Close any open dialog with the Escape key (accessibility / expected behavior).
   useEffect(() => {
@@ -886,6 +993,26 @@ export default function RoleDashboardClient() {
       const w = r.ward || "Unassigned";
       if (!grouped[w]) grouped[w] = [];
       grouped[w].push(r);
+    });
+    return grouped;
+  }, [filteredReports]);
+
+  const reportsByCategory = useMemo(() => {
+    const grouped: Record<string, Report[]> = {};
+    filteredReports.forEach((r) => {
+      const c = r.category || "Uncategorized";
+      if (!grouped[c]) grouped[c] = [];
+      grouped[c].push(r);
+    });
+    return grouped;
+  }, [filteredReports]);
+
+  const reportsByOfficer = useMemo(() => {
+    const grouped: Record<string, Report[]> = {};
+    filteredReports.forEach((r) => {
+      const key = r.assignedOfficerId || "unassigned";
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(r);
     });
     return grouped;
   }, [filteredReports]);
@@ -2541,8 +2668,34 @@ export default function RoleDashboardClient() {
         </section>
       )}
 
+      {/* Generic workspace views for sidebar destinations without a dedicated
+          section. Governor keeps its own bespoke performance/monthly blocks, so
+          those tabs are excluded here for that role to avoid duplicate content. */}
+      {WORKSPACE_TABS.has(activeLower) &&
+        !(role === "GOVERNOR" && ["sub-county performance", "ward performance", "department performance", "monthly reports"].includes(activeLower)) && (
+        <WorkspaceSection
+          tab={activeLower}
+          title={activeItem}
+          role={role}
+          reports={filteredReports}
+          departments={departments}
+          officers={directoryOfficers.length > 0 ? directoryOfficers : availableOfficers}
+          users={users}
+          assignments={assignments}
+          subCounties={subCounties}
+          wards={wards}
+          auditLogs={auditLogs}
+          escalations={escalations}
+          resolutions={resolutions}
+          deptNameById={deptNameById}
+          loading={assignmentsLoading || directoryLoading || structureLoading || auditLoading}
+          now={now}
+        />
+      )}
+
       {/* Catch-all: report-related tabs without dedicated sections */}
       {!isOverviewPage &&
+        !WORKSPACE_TABS.has(activeLower) &&
         !activeLower.includes("inspection") &&
         !activeLower.includes("work update") &&
         !activeLower.includes("progress update") &&
