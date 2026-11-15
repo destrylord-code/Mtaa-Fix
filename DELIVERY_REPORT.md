@@ -28,6 +28,7 @@ Branch: `arena/967bb648-mtaa-fix` (base `fe6e12f`)
 - Reports: create/update/search/filter/history/download access checks; guest reports now receive routing/history/audit; status changes use compare-and-swap transitions; acceptance closes the case.
 - Dashboards: counts derived from scoped datasets instead of a single 100-row page; live health/degraded reporting; role-scoped government data.
 - Frontends: citizen `/sign-in` redirects and guest-route access; all 15 roles mapped to correct dashboard origins/ports; admin refresh-on-401; government upload/officer endpoints, JSON/FormData bodies, hook order, render purity, and full status vocabulary.
+- API connectivity: browser-side calls now use same-origin relative paths (`/api/*`, `/uploads/*`, `/health`) proxied server-side to `BACKEND_URL` by `next.config.mjs` rewrites, replacing 24 hardcoded `http://localhost:5000` fallbacks that broke any non-localhost host (including the live preview). The admin page guard no longer intercepts API paths; the backend recognizes all three role session cookies so cookie-only evidence images authenticate through the proxy; the government `/api/session` route is preserved (afterFiles).
 - Database: repaired enum-default migration; added security/evidence migration; seeds support `DATABASE_URL` and do not reset existing account passwords.
 
 ## 4. Bugs found and fixed (highlights)
@@ -81,8 +82,11 @@ Branch: `arena/967bb648-mtaa-fix` (base `fe6e12f`)
 | Citizen `npm run build` | PASS — 14 routes |
 | Admin `npm run build` | PASS — 15 routes |
 | Government `npm run build` | PASS — 12 routes |
+| Browser crawl (Playwright + bundled Chromium) | PASS — 14 government roles, 280 pages, 0 layout flags, 0 page errors, 0 HTTP errors |
+| Admin/citizen/gov browser captures | PASS — desktop & mobile `docW == viewport`, 0 console/page/HTTP errors (scrollable-table & skip-link audit notes are known false positives) |
+| Same-origin proxy (curl, localhost + preview origin) | PASS — login, scoped data, cookie-only evidence download (200) and no-auth rejection (401) on all three frontends; government `/api/session` not shadowed |
 
-Logs are in `.arena/verification/` (local, ignored).
+Browser automation ran in-sandbox against the dev servers using `playwright-core` + `@sparticuz/chromium` (bundled binary; no CDN download). Logs/screenshots are in `.arena/verify/` and `.arena/browser-tools/` (local, ignored).
 
 ## 8. Build status
 
@@ -91,7 +95,7 @@ All three frontend production builds succeed. Backend starts and passes API/DB i
 ## 9. Remaining limitations / external dependencies
 
 - Implemented but not externally verified: real Resend delivery and real Cloudinary uploads (no credentials supplied). Integrations are implemented and fail closed in production when email is unconfigured.
-- Browser automation was not run: no Chromium/Playwright browser binaries were available in the sandbox. Verification used production builds, HTTP/API integration suites, and TypeScript/lint checks.
+- Browser automation was run in-sandbox with `playwright-core` + a bundled `@sparticuz/chromium` binary (Playwright/Puppeteer CDNs were unreachable, so no browser was downloaded). It exercised the real UI against the dev servers through the same-origin proxy. OpenStreetMap map tiles are unreachable from the sandbox (`ERR_CONNECTION_CLOSED`); the government map renders its boundary/markers and shows a graceful tiles-unavailable notice. This is an external network limitation, not an application defect.
 - Prisma native engine download from `binaries.prisma.sh` was blocked here. Generation/validation/migration diagnosis were verified with the matching official WASM engine plus PGlite. Normal deployments should use `prisma generate`/`prisma migrate deploy` with engine access or a cached engine.
 - The repaired historical migration changes a checksum. If any database already recorded the old broken migration manually, reconcile it with `prisma migrate resolve` after backup; fresh deployments apply cleanly.
 - A non-placeholder database password exists in base commit `fe6e12f` (`backend/.env.supabase.bak`). It is removed from the current tree/index, but history still contains it. Rotate that credential. History rewrite was not performed because it is destructive and requires explicit approval.
@@ -100,21 +104,24 @@ All three frontend production builds succeed. Backend starts and passes API/DB i
 ## 10. Environment variables to configure
 
 Backend: `DATABASE_URL` (or `PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE`), `JWT_SECRET`, `JWT_REFRESH_SECRET`, `CLIENT_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, optional `CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET`, `UPLOAD_DIR`, `PGSSL_REJECT_UNAUTHORIZED`, `PGSSL_CA`, `TRUST_PROXY`, `DB_POOL_SIZE`, `CITIZEN_APP_URL`.
-Frontends: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CITIZEN_APP_URL`, `NEXT_PUBLIC_ADMIN_APP_URL`, `NEXT_PUBLIC_GOVERNMENT_APP_URL`.
+Frontends: `NEXT_PUBLIC_API_URL` (leave empty for the same-origin proxy), `BACKEND_URL` (server-side proxy target, default `http://localhost:5000`), `ALLOWED_DEV_ORIGINS` (dev-only preview hosts), `NEXT_PUBLIC_CITIZEN_APP_URL`, `NEXT_PUBLIC_ADMIN_APP_URL`, `NEXT_PUBLIC_GOVERNMENT_APP_URL`.
+When using the proxy, set backend `CLIENT_URL` to the deployed frontend origins (the browser's origin is forwarded on write requests).
 Never commit `.env*` files. Generate JWT secrets with `openssl rand -base64 32`.
 
 ## 11. Commits created
 
 - `c15d1e8` — Harden backend workflows, authorization, uploads, and database integration
 - `98f5ed1` — Repair frontend integration, self-host fonts, and remove mock report data
-- Documentation/hygiene commit — delivery report, accurate README/DEPLOYMENT, ignore local artifacts, untrack env files and runtime uploads
+- `cf78d86` — Documentation/hygiene: delivery report, accurate README/DEPLOYMENT, ignore local artifacts, untrack env files and runtime uploads
+- `8db8c7e` — Government shared ReportsTable, reference codes, responsive shell, user-management dialog, officer endpoint scoping; admin/citizen reference-code and overflow fixes
+- `06f5541` — Same-origin API proxy so frontends work behind any host/preview (relative API base, rewrites, admin guard exclusion, role-cookie media auth, docs)
 
 Push status: pushed to `origin/arena/967bb648-mtaa-fix`; `main` was not modified or force-pushed.
 
 ## 12. Deployment readiness
 
-Completed and tested: core API workflows, auth/RBAC, report lifecycle, operational modules, dashboards, migrations against local PostgreSQL, frontend production builds, lint/typecheck.
-Implemented but unverified externally: Resend email, Cloudinary storage, managed-production database TLS/network path, real browser interaction.
+Completed and tested: core API workflows, auth/RBAC, report lifecycle, operational modules, dashboards, migrations against local PostgreSQL, frontend production builds, lint/typecheck, in-browser interaction across all 14 government roles plus admin/citizen (280 pages, 0 errors), and the same-origin API proxy (login, data, evidence media) on localhost and the preview origin.
+Implemented but unverified externally: Resend email, Cloudinary storage, managed-production database TLS/network path.
 Blocked/incomplete: none for local production-build readiness; external credential configuration and leaked-credential rotation are required before public deployment. Not yet deployed to a public host.
 
 Recommended release sequence: rotate leaked DB password → provision managed PostgreSQL → configure env vars → `prisma migrate deploy` → `prisma generate` → `npm run db:seed` → build/deploy backend and frontends → smoke-test auth/report/upload/email → only then consider dev-seed in non-production environments.
