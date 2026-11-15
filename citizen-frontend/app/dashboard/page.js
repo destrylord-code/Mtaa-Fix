@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 const TOKEN_KEY = "crs_citizen_access_token";
@@ -433,7 +433,7 @@ export default function CitizenDashboard() {
               }} />
             )}
             {activePage === "My Reports" && (
-              <MyReports token={token} />
+              <MyReports token={token} onReportClick={() => navigateTo("Report an Issue")} />
             )}
             {activePage === "My Profile" && (
               <Profile token={token} user={user} reports={reports} onLogout={handleLogout} />

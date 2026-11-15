@@ -10,7 +10,7 @@ import {
 } from "../utils/reportUtils";
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 const MAX_FILES = 5;

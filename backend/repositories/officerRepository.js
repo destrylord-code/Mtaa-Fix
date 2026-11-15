@@ -40,10 +40,9 @@ const officerRepository = {
         }).then(withoutPassword);
       } catch (error) {
         if (error.code === 'P2002' || error.message?.includes('Unique constraint')) {
-          const existing = await this.findOfficerByEmail(officer.email);
-          if (existing) return existing;
+          throw error;
         }
-        console.warn('[DB] Prisma createOfficer failed, falling back to memory:', error.message);
+        throw error;
       }
     }
 
@@ -60,7 +59,7 @@ const officerRepository = {
           where: { email: normalized, role: 'OFFICER' },
         }).then(withoutPassword);
       } catch (error) {
-        console.warn('[DB] Prisma findOfficerByEmail failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return withoutPassword([...memoryStore.users.values()].find(
@@ -75,7 +74,7 @@ const officerRepository = {
           where: { id, role: { in: ['OFFICER', 'FIELD_OFFICER'] } },
         }).then(withoutPassword);
       } catch (error) {
-        console.warn('[DB] Prisma findOfficerById failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     const user = memoryStore.users.get(id);
@@ -100,7 +99,7 @@ const officerRepository = {
           orderBy: { name: 'asc' },
         }).then((officers) => officers.map(withoutPassword));
       } catch (error) {
-        console.warn('[DB] Prisma findOfficers failed, falling back to memory:', error.message);
+        throw error;
       }
     }
 
@@ -127,7 +126,7 @@ const officerRepository = {
           data,
         }).then(withoutPassword);
       } catch (error) {
-        console.warn('[DB] Prisma updateOfficer failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     const existing = memoryStore.users.get(id);

@@ -2,6 +2,7 @@ import db from '../config/db.js';
 import { recordStatusHistory } from '../services/statusWorkflow.js';
 import { canAccessReport, canChangeStatus, scopeReportQuery } from '../services/jurisdiction.js';
 import { notifyUser } from '../services/notifyService.js';
+import { validateMediaUrls } from '../services/reportValidation.js';
 
 function isFieldOfficer(user) {
   return user && user.role === 'FIELD_OFFICER';
@@ -30,6 +31,8 @@ export const createInspection = async (req, res, next) => {
       return res.status(403).json({ status: 'error', message: 'Forbidden: Report is outside your jurisdiction.' });
     }
 
+    if (!['ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'INSPECTION_IN_PROGRESS'].includes(report.status)) return res.status(409).json({ status: 'error', message: 'Inspection is not available at this workflow stage.' });
+    validateMediaUrls(mediaUrls || []);
     const inspection = await db.createInspection({
       reportId,
       officerId: req.user.id,
@@ -40,7 +43,10 @@ export const createInspection = async (req, res, next) => {
     });
 
     // Advance the report into inspection phase when it was assigned/acknowledged.
-    if (['SUBMITTED', 'ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS'].includes(report.status)) {
+    if (status === 'COMPLETED' && ['INSPECTION_IN_PROGRESS', 'ASSIGNED', 'ACKNOWLEDGED'].includes(report.status)) {
+      await db.updateReport(reportId, { status: 'IN_PROGRESS' });
+      await recordStatusHistory({ reportId, fromStatus: report.status, toStatus: 'IN_PROGRESS', notes: 'Inspection completed', actorId: req.user.id });
+    } else if (['ASSIGNED', 'ACKNOWLEDGED', 'IN_PROGRESS'].includes(report.status)) {
       await db.updateReport(reportId, { status: 'INSPECTION_IN_PROGRESS' });
       await recordStatusHistory({
         reportId,
@@ -124,13 +130,14 @@ export const updateInspection = async (req, res, next) => {
     }
 
     const isOwner = inspection.officerId === req.user.id;
-    if (isFieldOfficer(req.user) && !isOwner && !isSupervisory(req.user)) {
+    if (!isSupervisory(req.user) && (!isFieldOfficer(req.user) || !isOwner)) {
       return res.status(403).json({
         status: 'error',
         message: 'Forbidden: Only the recording officer or a supervisor may update this inspection.',
       });
     }
 
+    validateMediaUrls(req.body.mediaUrls || []);
     const updated = await db.updateInspection(req.params.id, req.body);
 
     // If the inspection is completed, move the report forward.

@@ -1,5 +1,5 @@
 export const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 const TOKEN_KEY = "crs_citizen_access_token";
@@ -23,15 +23,16 @@ export function setToken(token) {
 export async function apiFetch(path, { method = "GET", body, headers = {} } = {}) {
   const token = getToken();
 
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const res = await fetch(`${API_URL}${path}`, {
     method,
     credentials: "include",
     headers: {
-      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(body && !isFormData ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    ...(body ? { body: isFormData ? body : JSON.stringify(body) } : {}),
   });
 
   if (res.status === 401) {
@@ -40,7 +41,7 @@ export async function apiFetch(path, { method = "GET", body, headers = {} } = {}
       window.localStorage.removeItem(USER_KEY);
       document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`;
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = "/login";
+      window.location.href = "/sign-in";
     }
     throw new Error("Unauthorized - please sign in again.");
   }
@@ -50,25 +51,23 @@ export async function apiFetch(path, { method = "GET", body, headers = {} } = {}
   return data;
 }
 
+const GOVERNMENT_ROLES = new Set([
+  "OFFICER", "FIELD_OFFICER", "TECHNICAL_SUPERVISOR", "TECHNICAL_HEAD",
+  "CHIEF_OFFICER", "CECM", "GOVERNOR", "WARD_ADMIN", "SUBCOUNTY_ADMIN",
+  "DISASTER_MANAGER", "ENFORCEMENT_OFFICER", "DEPARTMENTAL_ADMIN",
+]);
 const LOCAL_DASHBOARD_URLS = {
-  ADMIN: "http://localhost:3000",
-  OFFICER: "http://localhost:3001",
-  CITIZEN: "http://localhost:3002",
+  CITIZEN: "http://localhost:3000",
+  ADMIN: "http://localhost:3001",
+  GOVERNMENT: "http://localhost:3002",
 };
 
-const ROLE_URLS = {
-  CITIZEN: process.env.NEXT_PUBLIC_CITIZEN_APP_URL,
-  OFFICER: process.env.NEXT_PUBLIC_GOVERNMENT_APP_URL,
-  ADMIN: process.env.NEXT_PUBLIC_ADMIN_APP_URL,
-  SUPER_ADMIN: process.env.NEXT_PUBLIC_ADMIN_APP_URL,
-};
-
-const ROLE_URL_ENV = {
-  CITIZEN: "NEXT_PUBLIC_CITIZEN_APP_URL",
-  OFFICER: "NEXT_PUBLIC_GOVERNMENT_APP_URL",
-  ADMIN: "NEXT_PUBLIC_ADMIN_APP_URL",
-  SUPER_ADMIN: "NEXT_PUBLIC_ADMIN_APP_URL",
-};
+function dashboardTarget(role) {
+  if (role === "CITIZEN") return { env: "NEXT_PUBLIC_CITIZEN_APP_URL", local: LOCAL_DASHBOARD_URLS.CITIZEN, configured: process.env.NEXT_PUBLIC_CITIZEN_APP_URL };
+  if (role === "ADMIN" || role === "SUPER_ADMIN") return { env: "NEXT_PUBLIC_ADMIN_APP_URL", local: LOCAL_DASHBOARD_URLS.ADMIN, configured: process.env.NEXT_PUBLIC_ADMIN_APP_URL };
+  if (GOVERNMENT_ROLES.has(role)) return { env: "NEXT_PUBLIC_GOVERNMENT_APP_URL", local: LOCAL_DASHBOARD_URLS.GOVERNMENT, configured: process.env.NEXT_PUBLIC_GOVERNMENT_APP_URL };
+  return null;
+}
 
 export function normalizeRole(role) {
   return String(role || "")
@@ -79,35 +78,13 @@ export function normalizeRole(role) {
 
 export function getDashboardUrl(role) {
   const normalizedRole = normalizeRole(role);
-  const envName = ROLE_URL_ENV[normalizedRole];
-  if (!envName) {
-    throw new Error("This account does not have a dashboard configured.");
-  }
-
-  const configuredUrl = ROLE_URLS[normalizedRole]?.trim();
-  const value =
-    configuredUrl ||
-    (process.env.NODE_ENV === "production"
-      ? ""
-      : LOCAL_DASHBOARD_URLS[normalizedRole]);
-
-  if (!value) {
-    throw new Error(
-      `Set ${envName} to the public URL for this account's dashboard.`
-    );
-  }
-
+  const target = dashboardTarget(normalizedRole);
+  if (!target) throw new Error("This account does not have a dashboard configured.");
+  const value = target.configured?.trim() || (process.env.NODE_ENV === "production" ? "" : target.local);
+  if (!value) throw new Error(`Set ${target.env} to the public URL for this account's dashboard.`);
   let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error(`${envName} must be a valid absolute URL.`);
-  }
-
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error(`${envName} must use HTTP or HTTPS.`);
-  }
-
+  try { parsed = new URL(value); } catch { throw new Error(`${target.env} must be a valid absolute URL.`); }
+  if (!["http:", "https:"].includes(parsed.protocol)) throw new Error(`${target.env} must use HTTP or HTTPS.`);
   return parsed.origin;
 }
 

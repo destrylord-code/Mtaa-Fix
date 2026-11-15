@@ -5,17 +5,17 @@ import { validate } from '../middlewares/validateMiddlewares.js';
 import {
   createResolutionSubmission, getResolutionSubmissions, approveResolution, rejectResolution,
 } from '../controllers/resolutionController.js';
-import { createResolutionSubmissionSchema } from '../validators/resolutionValidator.js';
+import { createResolutionSubmissionSchema, rejectResolutionSubmissionSchema } from '../validators/resolutionValidator.js';
 import {
   ADMIN_ROLES, WARD_SCOPED_ROLES, DEPARTMENT_SCOPED_ROLES,
 } from '../services/jurisdiction.js';
 
 const router = express.Router();
 const resolutionWriteRoles = [
-  'FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER', 'CECM', 'GOVERNOR', 'ADMIN', 'SUPER_ADMIN',
+  'FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER',
 ];
 const resolutionReadRoles = [...new Set([...ADMIN_ROLES, ...WARD_SCOPED_ROLES, ...DEPARTMENT_SCOPED_ROLES])];
-const resolutionApproveRoles = ['TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER', 'CECM', 'GOVERNOR', 'ADMIN', 'SUPER_ADMIN'];
+const resolutionApproveRoles = ['TECHNICAL_HEAD', 'CHIEF_OFFICER', 'ADMIN', 'SUPER_ADMIN'];
 
 router.post(
   '/',
@@ -34,7 +34,7 @@ router.patch(
 );
 router.patch(
   '/:id/reject',
-  ...[authenticate, authorizeRoles(...resolutionApproveRoles)],
+  ...[authenticate, authorizeRoles(...resolutionApproveRoles), validate(rejectResolutionSubmissionSchema)],
   rejectResolution
 );
 

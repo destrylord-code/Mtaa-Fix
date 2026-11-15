@@ -18,6 +18,28 @@ values marked `<YOUR_VALUE>` when you have them.
 | Image storage | Cloudinary | **Cloudinary** free (~25 GB/mo) | Report evidence uploads |
 | Email | Resend | **Resend** free (100 emails/day) | Verification & password reset |
 
+### How the frontends reach the API (same-origin proxy)
+
+Each Next.js frontend calls the API on **same-origin relative paths** (`/api/*`,
+`/uploads/*`, `/health`). `next.config.mjs` rewrites proxy those paths to the
+backend server-side, so the browser only ever talks to the frontend's own origin.
+This avoids cross-origin cookie/CORS problems and works unchanged in local dev,
+preview environments, and production.
+
+- `NEXT_PUBLIC_API_URL` — browser-side base. **Leave empty** (the default) to use
+  the same-origin proxy. Set an absolute URL only if you deliberately want the
+  browser to call the backend directly (cross-origin).
+- `BACKEND_URL` — server-side proxy target (default `http://localhost:5000`). The
+  browser never sees this. Point it at the backend's internal address in
+  production (e.g. a Render internal hostname).
+- The backend `CLIENT_URL` must still list each frontend's **public origin**: the
+  browser sends its `Origin` header on POST/PUT/DELETE and the proxy forwards it,
+  so the backend validates it against `CLIENT_URL`.
+
+The government frontend's own `/api/session` route handler (httpOnly cookie) is a
+real filesystem route and is matched before the proxy rewrite, so it is never
+shadowed.
+
 ---
 
 ## 2. Credentials You Need to Provide
@@ -36,7 +58,8 @@ Create a `.env` file in each application directory. **Never commit `.env`.**
 | `JWT_EXPIRES_IN` | Access token lifetime | `15m` |
 | `JWT_REFRESH_EXPIRES_IN` | Refresh token lifetime | `7d` |
 | `CLIENT_URL` | Your deployed frontend origins (comma-separated) | `https://citizen.vercel.app,https://gov.vercel.app` |
-| `RESEND_API_KEY` | Resend dashboard → API Keys | `re_xxxxxxxxxxxx` (optional) |
+| `RESEND_API_KEY` | Resend dashboard → API Keys | `re_xxxxxxxxxxxx` (required for production account email) |
+| `EMAIL_FROM` | Verified Resend sender | `Mtaa Fix <noreply@your-domain>` |
 | `EMAIL_FROM` | Verified sender in Resend | `noreply@yourdomain.org` |
 | `CLOUDINARY_CLOUD_NAME` | Cloudinary dashboard | `your_cloud_name` |
 | `CLOUDINARY_API_KEY` | Cloudinary dashboard | `1234567890` |
@@ -46,7 +69,8 @@ Create a `.env` file in each application directory. **Never commit `.env`.**
 
 | Variable | Value |
 |----------|-------|
-| `NEXT_PUBLIC_API_URL` | `https://your-backend.onrender.com` |
+| `NEXT_PUBLIC_API_URL` | Leave **empty** to use the same-origin proxy (recommended). Absolute backend URL only for direct cross-origin calls. |
+| `BACKEND_URL` | Server-side proxy target, e.g. `https://your-backend.onrender.com` (browser never sees it) |
 | `NEXT_PUBLIC_CITIZEN_APP_URL` | `https://citizen.vercel.app` |
 | `NEXT_PUBLIC_ADMIN_APP_URL` | `https://admin.vercel.app` |
 | `NEXT_PUBLIC_GOVERNMENT_APP_URL` | `https://gov.vercel.app` |
@@ -56,15 +80,21 @@ Create a `.env` file in each application directory. **Never commit `.env`.**
 
 | Variable | Value |
 |----------|-------|
-| `NEXT_PUBLIC_API_URL` | `https://your-backend.onrender.com` |
+| `NEXT_PUBLIC_API_URL` | Leave **empty** to use the same-origin proxy (recommended). Absolute backend URL only for direct cross-origin calls. |
+| `BACKEND_URL` | Server-side proxy target, e.g. `https://your-backend.onrender.com` (browser never sees it) |
 | `NEXT_PUBLIC_CITIZEN_APP_URL` | `https://citizen.vercel.app` |
 
 ### Admin Dashboard (`admin-dashboard/.env`)
 
 | Variable | Value |
 |----------|-------|
-| `NEXT_PUBLIC_API_URL` | `https://your-backend.onrender.com` |
+| `NEXT_PUBLIC_API_URL` | Leave **empty** to use the same-origin proxy (recommended). Absolute backend URL only for direct cross-origin calls. |
+| `BACKEND_URL` | Server-side proxy target, e.g. `https://your-backend.onrender.com` (browser never sees it) |
 | `NEXT_PUBLIC_CITIZEN_APP_URL` | `https://citizen.vercel.app` |
+
+> When using the same-origin proxy, set the backend `CLIENT_URL` to the deployed
+> frontend origins (e.g. `https://citizen.vercel.app,https://admin.vercel.app,https://gov.vercel.app`).
+> The browser sends its origin on write requests and the proxy forwards it.
 
 ---
 
@@ -78,7 +108,7 @@ Create a `.env` file in each application directory. **Never commit `.env`.**
 3. **Important:** If using Supabase's connection pooler (port 6543), update
    `backend/repositories/client.js` to use explicit PG* config instead of
    `DATABASE_URL` (see the code comments in that file for the pattern).
-4. Run migrations: `cd backend && npx prisma migrate deploy`
+4. Run migrations: `cd backend && npx prisma migrate deploy` (back up first; the repaired `20261103182241_fix_escalation_status_type` migration changes a historical checksum)
 5. Seed: `cd backend && npm run db:seed` and `cd backend && node prisma/dev-seed.js`
 
 **Neon (alternative):**
@@ -104,8 +134,11 @@ Create a `.env` file in each application directory. **Never commit `.env`.**
 For each of citizen-frontend, government-frontend, admin-dashboard:
 1. Connect the folder to Vercel
 2. Build command: `npm install && npm run build`
-3. Add the `NEXT_PUBLIC_*` environment variables from section 2
-4. Deploy
+3. Add the environment variables from section 2: leave `NEXT_PUBLIC_API_URL`
+   empty (same-origin proxy) and set `BACKEND_URL` to the backend's address, plus
+   the `NEXT_PUBLIC_*_APP_URL` handoff origins.
+4. Set the backend `CLIENT_URL` to the deployed frontend origins.
+5. Deploy
 
 ### 3.4 Cloudinary (image uploads)
 
@@ -146,7 +179,7 @@ After deploying the backend with `DATABASE_URL` set:
 cd backend
 npx prisma migrate deploy     # Apply schema migrations
 npm run db:seed               # Seed counties, departments, roles, categories
-node prisma/dev-seed.js       # Seed test government/citizen accounts
+# npm run db:seed:dev       # OPTIONAL development-only test accounts; never run in production
 ```
 
 The seed creates:
@@ -207,3 +240,32 @@ Provide these values and I (or you) can wire them into `.env`:
 5. **Cloudinary** credentials (optional — needed for image uploads in production)
 
 Do not send secrets over chat. Paste them directly into each `.env` file locally, then deploy.
+
+## Additional production environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `PGSSL_REJECT_UNAUTHORIZED` | Defaults to certificate verification. Set `false` only for a trusted local/test database. |
+| `PGSSL_CA` | Optional PEM CA bundle for private database certificates. |
+| `TRUST_PROXY` | Set `1` only when the API is behind exactly one trusted reverse proxy so rate limits use the real client IP. |
+| `UPLOAD_DIR` | Persistent private volume for local evidence when Cloudinary is not configured. |
+| `DB_POOL_SIZE` | PostgreSQL pool size (default 10). |
+| `NEXT_PUBLIC_API_URL` | Browser-side API base baked into each frontend at build time. Leave empty to use the same-origin proxy (recommended). |
+| `BACKEND_URL` | Server-side proxy target for each frontend's `next.config.mjs` rewrites (default `http://localhost:5000`). The browser never sees it. |
+| `ALLOWED_DEV_ORIGINS` | Dev-only comma-separated hostnames allowed to load `/_next/*` dev resources behind a preview proxy. Ignored in production builds. |
+| `NEXT_PUBLIC_CITIZEN_APP_URL`, `NEXT_PUBLIC_ADMIN_APP_URL`, `NEXT_PUBLIC_GOVERNMENT_APP_URL` | Public frontend origins used for cross-dashboard handoff. |
+
+## Verification commands
+
+```bash
+cd backend
+npm test                 # isolated API suites
+npm run test:postgres    # PostgreSQL integration suites against local PGlite
+npx prisma validate
+npx prisma generate
+cd ../citizen-frontend && npm run lint && npm run build
+cd ../admin-dashboard && npm run lint && npm run build
+cd ../government-frontend && npm run lint && npx tsc --noEmit && npm run build
+```
+
+`test:postgres` is a development harness, not a production database. Production deployments must use a managed PostgreSQL/Neon/Supabase database and `prisma migrate deploy`.

@@ -18,5 +18,5 @@ router.get('/departments', getDashboardDepartments);
 router.get('/wards', getDashboardWards);
 router.get('/performance', getDashboardPerformance);
 router.get('/escalations', getDashboardEscalations);
-router.get('/health', getDashboardHealth);
+router.get('/health', authorizeRoles(...ADMIN_ROLES), getDashboardHealth);
 export default router;

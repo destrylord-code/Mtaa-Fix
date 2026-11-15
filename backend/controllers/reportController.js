@@ -6,28 +6,7 @@ import { notifyUser, notifyReportStatus } from '../services/notifyService.js';
 import { findPossibleDuplicates } from '../services/duplicateDetection.js';
 import { canAccessReport, canChangeStatus, canPerformTransition, scopeReportQuery } from '../services/jurisdiction.js';
 
-const sanitizeReport = (report, currentUser = null) => {
-  if (!report) return null;
-  const rep = { ...report };
-
-  // If report is anonymous and requester is not the original reporter or staff
-  const isReporter = currentUser && currentUser.id === rep.reporterId;
-  const isStaff = currentUser && [
-    'ADMIN', 'SUPER_ADMIN', 'GOVERNOR', 'CECM', 'CHIEF_OFFICER',
-    'TECHNICAL_HEAD', 'TECHNICAL_SUPERVISOR', 'WARD_ADMIN', 'SUBCOUNTY_ADMIN',
-    'FIELD_OFFICER', 'OFFICER', 'DISASTER_MANAGER', 'ENFORCEMENT_OFFICER',
-  ].includes(currentUser.role);
-
-  if (rep.isAnonymous && !isReporter && !isStaff && rep.reporter) {
-    rep.reporter = {
-      id: rep.reporter.id,
-      name: 'Anonymous Citizen',
-      role: 'CITIZEN',
-    };
-  }
-
-  return rep;
-};
+import { resolveReportFields, assertOwnedMedia, validateMediaUrls, sanitizeReport } from '../services/reportValidation.js';
 
 const extractMediaUrls = (req) => {
   let urls = [];
@@ -43,11 +22,11 @@ const extractMediaUrls = (req) => {
   }
 
   if (req.files && Array.isArray(req.files)) {
-    const fileUrls = req.files.map((file) => `/uploads/${file.filename}`);
+    const fileUrls = (req.uploadedMedia || []).map((file) => file.url);
     urls = [...urls, ...fileUrls];
   }
 
-  return urls;
+  return [...new Set(urls)];
 };
 export const createReport = async (req, res, next) => {
   try {
@@ -69,48 +48,29 @@ export const createReport = async (req, res, next) => {
 
     const mediaUrls = extractMediaUrls(req);
 
-    // Resolve geographical FKs so reports carry proper jurisdictional references.
-    // Resolution failures must never block report creation.
-    let countyId = null, subCountyId = null, wardId = null;
-    try {
-      if (county) {
-        const c = await db.findCountyByName(county);
-        countyId = c?.id || null;
-      }
-      if (subCounty && countyId) {
-        const sc = await db.findSubCountyByName(countyId, subCounty);
-        subCountyId = sc?.id || null;
-      }
-      if (ward && subCountyId) {
-        const w = await db.findWardByName(subCountyId, ward);
-        wardId = w?.id || null;
-      }
-    } catch (err) {
-      console.warn('[Report] Location resolution failed, proceeding without FKs:', err.message);
+    if (!req.user.isVerified && !req.user.emailVerified) {
+      return res.status(403).json({ status: 'error', message: 'Verify your email before submitting a report.' });
     }
+    await assertOwnedMedia(mediaUrls, req.user.id);
+    const locationFields = await resolveReportFields(req.body);
 
     const newReport = await db.createReport({
       title,
       description,
-      category,
-      subCategory,
+      ...locationFields,
+      category: locationFields.category || category,
+      subCategory: locationFields.subCategory ?? subCategory,
       priority,
       status: 'SUBMITTED',
-      location,
-      county,
-      subCounty,
-      ward,
-      countyId,
-      subCountyId,
-      wardId,
       latitude: latitude ? parseFloat(latitude) : null,
       longitude: longitude ? parseFloat(longitude) : null,
       mediaUrls,
       isAnonymous: Boolean(isAnonymous === true || isAnonymous === 'true' || isAnonymous === '1'),
       reporterId: req.user.id,
-      departmentId: departmentId || null,
+      location: location || null,
     });
 
+    await db.attachMediaToReport(mediaUrls, newReport.id, req.user.id);
     const routedReport = await applyRoutingRules(newReport);
 
     await recordStatusHistory({
@@ -168,48 +128,13 @@ export const createReport = async (req, res, next) => {
 
 export const createGuestReport = async (req, res, next) => {
   try {
-    const {
-      title,
-      description,
-      category,
-      subCategory,
-      priority = 'MEDIUM',
-      location,
-      county,
-      subCounty,
-      ward,
-      latitude,
-      longitude,
-    } = req.body;
-
-    const newReport = await db.createReport({
-      title,
-      description,
-      category,
-      subCategory,
-      priority,
-      status: 'SUBMITTED',
-      location,
-      county,
-      subCounty,
-      ward,
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
-      mediaUrls: [],
-      isAnonymous: true,
-      reporterId: null,
-    });
-
-    return res.status(201).json({
-      status: 'success',
-      message: 'Your anonymous report was submitted successfully.',
-      data: {
-        report: sanitizeReport(newReport),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
+    const fields = await resolveReportFields(req.body);
+    const report = await db.createReport({ ...req.body, ...fields, mediaUrls: [], status: 'SUBMITTED', isAnonymous: true, reporterId: null });
+    const routed = await applyRoutingRules(report);
+    await recordStatusHistory({ reportId: report.id, fromStatus: null, toStatus: routed.status, notes: 'Anonymous report submitted' });
+    await db.createAuditLog({ action: 'GUEST_REPORT_CREATED', entityType: 'REPORT', entityId: report.id, newValue: { status: routed.status, category: routed.category } });
+    return res.status(201).json({ status: 'success', message: 'Your anonymous report was submitted successfully.', data: { report: sanitizeReport(routed) } });
+  } catch (error) { next(error); }
 };
 
 export const getReports = async (req, res, next) => {
@@ -223,7 +148,7 @@ export const getReports = async (req, res, next) => {
       priority,
       category,
       ward,
-    } = req.query;
+    } = req.validatedQuery || req.query;
 
     const data = await db.findReports(scopeReportQuery(req.user, {
       page,
@@ -286,6 +211,7 @@ export const getReportHistory = async (req, res, next) => {
         message: 'Report not found.',
       });
     }
+    if (!canAccessReport(req.user, report)) return res.status(403).json({ status: 'error', message: 'Forbidden: Report is outside your jurisdiction.' });
     const history = await getStatusHistory(req.params.id);
     return res.status(200).json({
       status: 'success',
@@ -304,7 +230,7 @@ export const getMyReports = async (req, res, next) => {
       sortBy = 'createdAt',
       sortOrder = 'desc',
       status,
-    } = req.query;
+    } = req.validatedQuery || req.query;
 
     const data = await db.findReports({
       reporterId: req.user.id,
@@ -392,7 +318,12 @@ export const updateReport = async (req, res, next) => {
       ...(updatedMedia && { mediaUrls: updatedMedia }),
     };
 
-    const updated = await db.updateReport(id, updatePayload);
+    const newMedia = (updatedMedia || []).filter((url) => !(existing.mediaUrls || []).includes(url));
+    await assertOwnedMedia(newMedia, req.user.id, id);
+    if (updatedMedia) validateMediaUrls(updatedMedia);
+    const resolved = await resolveReportFields(updatePayload, existing);
+    const updated = await db.updateReport(id, { ...updatePayload, ...resolved });
+    await db.attachMediaToReport(newMedia, id, req.user.id);
 
     return res.status(200).json({
       status: 'success',
@@ -491,6 +422,16 @@ export const changeStatus = async (req, res, next) => {
       });
     }
 
+    if (departmentId && departmentId !== existing.departmentId && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
+      return res.status(403).json({ status: 'error', message: 'Only an administrator may reroute a report to another department.' });
+    }
+    if (assignedOfficerId) {
+      const officer = await db.findUserById(assignedOfficerId);
+      if (!officer?.isActive || officer.role === 'CITIZEN' || (req.user.departmentId && officer.departmentId !== req.user.departmentId)) {
+        return res.status(400).json({ status: 'error', message: 'Choose an active officer in the report department.' });
+      }
+    }
+    validateMediaUrls(resolutionMediaUrls || []);
     const isResolving = status === 'RESOLVED';
     const finalResolutionNotes = resolutionNotes || notes;
 
@@ -506,7 +447,8 @@ export const changeStatus = async (req, res, next) => {
       }),
     };
 
-    const updated = await db.updateReport(id, updatePayload);
+    const updated = await db.transitionReport(id, existing.status, updatePayload);
+    if (!updated) return res.status(409).json({ status: 'error', message: 'The report changed. Refresh and try again.' });
 
     await recordStatusHistory({
       reportId: id,
@@ -569,19 +511,25 @@ export const acceptResolution = async (req, res, next) => {
       });
     }
 
-    const updated = await db.updateReport(id, {
+    const updated = await db.transitionReport(id, existing.status, {
+      status: 'CLOSED',
       resolutionStatus: 'ACCEPTED',
       citizenFeedback: feedback || (rating ? `Rated ${rating}/5` : 'Resolution accepted by citizen.'),
     });
 
+    if (!updated) return res.status(409).json({ status: 'error', message: 'This resolution has already been reviewed.' });
     await db.createCitizenVerification({
       reportId: id,
       officerId: null,
+      citizenId: req.user.id,
       outcome: 'CONFIRMED',
       evidence: null,
       notes: feedback || 'Resolution accepted by citizen.',
     });
 
+    await recordStatusHistory({ reportId: id, fromStatus: existing.status, toStatus: 'CLOSED', notes: feedback || 'Resolution accepted by citizen', actorId: req.user.id });
+    await db.createAuditLog({ actorId: req.user.id, action: 'REPORT_RESOLUTION_ACCEPTED', entityType: 'REPORT', entityId: id, previousValue: { status: existing.status }, newValue: { status: 'CLOSED', rating } });
+    await notifyReportStatus(updated, 'CLOSED', feedback);
     return res.status(200).json({
       status: 'success',
       message: 'Resolution accepted. Thank you for confirming the fix!',
@@ -631,7 +579,9 @@ export const rejectResolution = async (req, res, next) => {
       });
     }
 
-    // Move report back to IN_PROGRESS or ESCALATED for officer review
+    const reopened = await db.transitionReport(id, existing.status, { status: 'REOPENED', resolutionStatus: 'REJECTED', rejectionReason });
+    if (!reopened) return res.status(409).json({ status: 'error', message: 'This resolution has already been reviewed.' });
+    await recordStatusHistory({ reportId: id, fromStatus: existing.status, toStatus: 'REOPENED', notes: rejectionReason, actorId: req.user.id });
     const updated = await db.updateReport(id, {
       status: 'IN_PROGRESS',
       resolutionStatus: 'REJECTED',
@@ -641,6 +591,7 @@ export const rejectResolution = async (req, res, next) => {
     await db.createCitizenVerification({
       reportId: id,
       officerId: null,
+      citizenId: req.user.id,
       outcome: 'REJECTED',
       evidence: null,
       notes: `Resolution rejected by citizen: ${rejectionReason}`,
@@ -648,7 +599,7 @@ export const rejectResolution = async (req, res, next) => {
 
     await recordStatusHistory({
       reportId: id,
-      fromStatus: existing.status,
+      fromStatus: 'REOPENED',
       toStatus: 'IN_PROGRESS',
       notes: `Resolution rejected: ${rejectionReason}`,
       actorId: req.user.id,
@@ -675,9 +626,25 @@ export const rejectResolution = async (req, res, next) => {
     next(error);
   }
 };
+export const partialResolution = async (req, res, next) => {
+  try {
+    const report = await db.findReportById(req.params.id);
+    if (!report) return res.status(404).json({ status: 'error', message: 'Report not found.' });
+    if (report.reporterId !== req.user.id) return res.status(403).json({ status: 'error', message: 'Only the reporting citizen can verify this resolution.' });
+    if (report.status !== 'RESOLVED') return res.status(409).json({ status: 'error', message: 'This report is not awaiting verification.' });
+    const updated = await db.transitionReport(report.id, 'RESOLVED', { status: 'REOPENED', resolutionStatus: 'PARTIAL', rejectionReason: req.body.reason });
+    if (!updated) return res.status(409).json({ status: 'error', message: 'This resolution has already been reviewed.' });
+    await db.createCitizenVerification({ reportId: report.id, citizenId: req.user.id, outcome: 'PARTIAL', notes: req.body.reason });
+    await recordStatusHistory({ reportId: report.id, fromStatus: 'RESOLVED', toStatus: 'REOPENED', notes: `Partial resolution: ${req.body.reason}`, actorId: req.user.id });
+    await db.createAuditLog({ actorId: req.user.id, action: 'REPORT_RESOLUTION_PARTIAL', entityType: 'REPORT', entityId: report.id, previousValue: { status: 'RESOLVED' }, newValue: { status: 'REOPENED', reason: req.body.reason } });
+    await notifyReportStatus(updated, 'REOPENED', req.body.reason);
+    return res.status(200).json({ status: 'success', message: 'Partial resolution recorded. The report has been reopened.', data: { report: sanitizeReport(updated, req.user) } });
+  } catch (error) { next(error); }
+};
+
 export const searchReports = async (req, res, next) => {
   try {
-    const { q, query, page = 1, limit = 10 } = req.query;
+    const { q, query, page = 1, limit = 10 } = req.validatedQuery || req.query;
     const searchTerm = q || query;
 
     if (!searchTerm) {
@@ -687,11 +654,11 @@ export const searchReports = async (req, res, next) => {
       });
     }
 
-    const data = await db.findReports({
+    const data = await db.findReports(scopeReportQuery(req.user, {
       search: searchTerm,
       page,
       limit,
-    });
+    }));
 
     data.reports = data.reports.map((r) => sanitizeReport(r, req.user));
 
@@ -720,9 +687,9 @@ export const filterReports = async (req, res, next) => {
       limit = 10,
       sortBy = 'createdAt',
       sortOrder = 'desc',
-    } = req.query;
+    } = req.validatedQuery || req.query;
 
-    const data = await db.findReports({
+    const data = await db.findReports(scopeReportQuery(req.user, {
       status,
       priority,
       category,
@@ -736,7 +703,7 @@ export const filterReports = async (req, res, next) => {
       limit,
       sortBy,
       sortOrder,
-    });
+    }));
 
     data.reports = data.reports.map((r) => sanitizeReport(r, req.user));
 
@@ -852,6 +819,7 @@ export default {
   changeStatus,
   acceptResolution,
   rejectResolution,
+  partialResolution,
   searchReports,
   filterReports,
 };

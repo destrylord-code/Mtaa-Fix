@@ -13,6 +13,7 @@ import {
   changeStatus,
   acceptResolution,
   rejectResolution,
+  partialResolution,
   searchReports,
   filterReports,
 } from '../controllers/reportController.js';
@@ -22,6 +23,7 @@ import { authorizeRoles } from '../middlewares/roleMiddlewares.js';
 import { STATUS_CHANGE_ROLES } from '../services/jurisdiction.js';
 import { validate } from '../middlewares/validateMiddlewares.js';
 import { uploadMedia } from '../middlewares/uploadMiddlewares.js';
+import { persistReportMedia } from '../controllers/uploadController.js';
 import { guestReportLimiter } from '../middlewares/ratelimitMiddlewares.js';
 
 import {
@@ -31,6 +33,9 @@ import {
   changeStatusSchema,
   acceptResolutionSchema,
   rejectResolutionSchema,
+  partialResolutionSchema,
+  filterReportsQuerySchema,
+  searchReportsQuerySchema,
 } from '../validators/reportValidator.js';
 
 const router = express.Router();
@@ -60,8 +65,8 @@ const deleteRoute = (path, ...handlers) => {
 };
 
 getRoute('/me', authenticate, getMyReports);
-getRoute('/search', authenticate, searchReports);
-getRoute('/filter', authenticate, filterReports);
+getRoute('/search', authenticate, validate(searchReportsQuerySchema, 'query'), searchReports);
+getRoute('/filter', authenticate, validate(filterReportsQuerySchema, 'query'), filterReports);
 getRoute('/', authenticate, getReports);
 postRoute(
   '/guest',
@@ -73,6 +78,7 @@ postRoute(
   '/',
   authenticate,
   uploadMedia.array('media', 5),
+  persistReportMedia,
   validate(createReportSchema),
   createReport
 );
@@ -83,6 +89,7 @@ putRoute(
   '/:id',
   authenticate,
   uploadMedia.array('media', 5),
+  persistReportMedia,
   validate(updateReportSchema),
   updateReport
 );
@@ -90,6 +97,7 @@ patchRoute(
   '/:id',
   authenticate,
   uploadMedia.array('media', 5),
+  persistReportMedia,
   validate(updateReportSchema),
   updateReport
 );
@@ -132,5 +140,8 @@ patchRoute(
   validate(rejectResolutionSchema),
   rejectResolution
 );
+
+
+postRoute('/:id/partial-resolution', authenticate, validate(partialResolutionSchema), partialResolution);
 
 export default router;

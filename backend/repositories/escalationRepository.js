@@ -27,6 +27,7 @@ const escalationRepository = {
       reason: data.reason,
       priority: data.priority || 'HIGH',
       status: 'OPEN',
+      previousStatus: data.previousStatus || null,
       escalatedById: data.escalatedById || null,
       resolvedById: null,
       resolutionNotes: null,
@@ -36,7 +37,7 @@ const escalationRepository = {
     };
     if (checkIsPrisma()) {
       try { return await getPrismaClient().escalation.create({ data: escalation }); }
-      catch (error) { console.warn('[DB] Prisma createEscalation failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     memoryStore.escalations.set(escalation.id, escalation);
     return { ...escalation };
@@ -52,12 +53,13 @@ const escalationRepository = {
   async findEscalatedReports(scope = {}) {
     if (checkIsPrisma()) {
       try {
-        const escalations = await getPrismaClient().escalation.findMany({ where: { status: 'OPEN', ...scope }, orderBy: { createdAt: 'desc' } });
+        const escalations = await getPrismaClient().escalation.findMany({ where: { status: 'OPEN', ...scope }, orderBy: { createdAt: 'desc' }, include: { report: true } });
         markDbHealthy('findEscalatedReports');
         return { escalations, degraded: false };
       } catch (error) {
         console.error('[DB] Prisma findEscalatedReports failed, serving degraded in-memory data:', error);
         recordDbFallback('findEscalatedReports', error);
+        throw error;
       }
     } else {
       recordDbFallback('findEscalatedReports', new Error('Prisma client is not configured'));
@@ -69,15 +71,15 @@ const escalationRepository = {
   },
   async findEscalationById(id) {
     if (checkIsPrisma()) {
-      try { return await getPrismaClient().escalation.findUnique({ where: { id } }); }
-      catch (error) { console.warn('[DB] Prisma findEscalationById failed, falling back to memory:', error.message); }
+      try { return await getPrismaClient().escalation.findUnique({ where: { id }, include: { report: true } }); }
+      catch (error) { throw error; }
     }
     return memoryStore.escalations.get(id) || null;
   },
   async findEscalationByReportId(reportId) {
     if (checkIsPrisma()) {
       try { return await getPrismaClient().escalation.findFirst({ where: { reportId, status: 'OPEN' } }); }
-      catch (error) { console.warn('[DB] Prisma findEscalationByReportId failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     return [...memoryStore.escalations.values()].find((item) => item.reportId === reportId && item.status === 'OPEN') || null;
   },
@@ -88,7 +90,7 @@ const escalationRepository = {
           where: { id },
           data: { status: 'RESOLVED', resolvedById: data.resolvedById, resolutionNotes: data.resolutionNotes || null, resolvedAt: new Date() },
         });
-      } catch (error) { console.warn('[DB] Prisma resolveEscalation failed, falling back to memory:', error.message); }
+      } catch (error) { throw error; }
     }
     const existing = memoryStore.escalations.get(id);
     if (!existing) return null;

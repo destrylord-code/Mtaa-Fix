@@ -88,7 +88,7 @@ export function AdminShell({ user, children, pageTitle }) {
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className={`border-b border-white/15 px-5 py-4 flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} gap-3`}>
+        <div className={`flex-shrink-0 border-b border-white/15 px-5 py-4 flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} gap-3`}>
           <BrandLogo className="h-8 w-8 flex-shrink-0" />
           {!sidebarCollapsed && (
             <div className="min-w-0">
@@ -100,13 +100,13 @@ export function AdminShell({ user, children, pageTitle }) {
           )}
         </div>
 
-        <div className={`px-5 pt-8 ${!sidebarCollapsed ? "" : "pt-3"}`}>
+        <div className={`flex-1 min-h-[0] px-5 pt-8 ${!sidebarCollapsed ? "" : "pt-3"} overflow-y-auto scrollbar-thin scrollbar-thumb-[#94a3b2] scrollbar-track-transparent`}>
           {!sidebarCollapsed && (
             <p className="mb-6 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#bdcdbd]">
               Main menu
             </p>
           )}
-          <nav aria-label="Admin navigation" className="space-y-0.5">
+          <nav aria-label="Admin navigation" className="space-y-0.5 min-h-[0]">
             {ADMIN_NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = activePage === item.name;
@@ -131,7 +131,7 @@ export function AdminShell({ user, children, pageTitle }) {
           </nav>
         </div>
 
-        <div className="mt-auto border-t border-white/15 p-4 pb-6">
+        <div className="mt-auto flex-shrink-0 border-t border-white/15 p-4 pb-6">
           <div className={`flex flex-col items-center gap-2 px-3 py-3 ${!sidebarCollapsed ? "flex-row justify-between items-center gap-3 px-3 py-2" : ""}`}>
             <div className="flex size-8 items-center justify-center rounded-full bg-[#dce5d8] text-[#244637] text-xs font-semibold flex-shrink-0">
               {initials}
@@ -167,10 +167,10 @@ export function AdminShell({ user, children, pageTitle }) {
 
       <div
         id="main-content"
-        className={`min-h-screen min-w-0 w-full transition-all duration-300 ${mainContentMargin}`}
+        className={`min-h-screen min-w-0 transition-all duration-300 ${mainContentMargin}`}
       >
-        <header className="sticky top-0 z-30 flex min-h-[72px] items-center justify-between gap-4 border-b border-[#dce2d8] bg-[#fdfdf9] px-4 sm:px-6 py-2.5 sm:py-3">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex min-h-[72px] items-center justify-between gap-2 border-b border-[#dce2d8] bg-[#fdfdf9] px-4 sm:gap-4 sm:px-6 py-2.5 sm:py-3">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={toggleSidebar}
@@ -191,17 +191,17 @@ export function AdminShell({ user, children, pageTitle }) {
             >
               <Menu className="w-4 h-4" aria-hidden="true" />
             </button>
-            <div className="h-4 w-px bg-[#dce2d8] mx-2" />
-            <div>
+            <div className="mx-1 hidden h-4 w-px bg-[#dce2d8] sm:mx-2 sm:block" />
+            <div className="min-w-0">
               <p className="text-xs font-medium text-[#788277] leading-none">
                 Admin workspace
               </p>
-              <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-[#173c32] leading-none">
+              <h1 className="mt-0.5 truncate text-base font-semibold tracking-tight text-[#173c32] leading-none sm:text-lg" title={resolvedPageTitle}>
                 {resolvedPageTitle}
               </h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-shrink-0 items-center gap-3">
             <AdminProfilePill user={user} onProfileClick={() => router.push("/")} />
           </div>
         </header>
@@ -219,6 +219,18 @@ export function ReportDetailsDialog({ report, onClose }) {
     setOpen(true);
   }, [report]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [open, onClose]);
+
   if (!open || !report) return null;
 
   return (
@@ -228,7 +240,10 @@ export function ReportDetailsDialog({ report, onClose }) {
       aria-modal="true"
       aria-labelledby="report-details-title"
       onClick={(e) => {
-        if (e.target === e.currentTarget) setOpen(false);
+        if (e.target === e.currentTarget) {
+          setOpen(false);
+          onClose();
+        }
       }}
     >
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">

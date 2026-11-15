@@ -1,6 +1,12 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32 || /change_in_production|super_secret/.test(process.env.JWT_SECRET))) {
+  throw new Error('JWT_SECRET must be a strong random secret of at least 32 characters');
+}
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32 || process.env.JWT_REFRESH_SECRET === process.env.JWT_SECRET || /change_in_production|super_secret/.test(process.env.JWT_REFRESH_SECRET))) {
+  throw new Error('JWT_REFRESH_SECRET must be a separate strong random secret of at least 32 characters');
+}
 if (!process.env.JWT_SECRET) {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('JWT_SECRET must be set in production');
@@ -50,7 +56,7 @@ export function verifyRefreshToken(token) {
 }
 
 export function generateOtpCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 export function generateSecureToken() {

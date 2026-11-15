@@ -62,7 +62,7 @@ import { StatCard, EmptyState, ErrorState, LoadingState } from "./index";
 import StatusBadge from "./StatusBadge";
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 type DashboardUser = {
@@ -160,7 +160,7 @@ export function GovernmentShell({
       return urlTab;
     }
     return internalActiveItem;
-  }, [activeItem, searchParams, roleConfig]);
+  }, [activeItem, searchParams, roleConfig, internalActiveItem]);
 
   // Sync URL query param when the active item changes.
   useEffect(() => {
@@ -208,11 +208,11 @@ export function GovernmentShell({
     } finally {
       setNotificationsLoading(false);
     }
-  }, [sessionVersion]);
+  }, []);
 
   useEffect(() => {
     void loadNotifications();
-  }, [loadNotifications]);
+  }, [loadNotifications, sessionVersion]);
 
   const iconMap: Record<string, any> = {
     Dashboard: LayoutDashboard,
@@ -393,7 +393,7 @@ export function GovernmentShell({
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className={`border-b border-white/15 px-5 py-4 flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} gap-3`}>
+        <div className={`flex-shrink-0 border-b border-white/15 px-5 py-4 flex items-center ${sidebarCollapsed ? "justify-center" : "justify-start"} gap-3`}>
           <BrandLogo className="h-8 w-8 flex-shrink-0" />
           {!sidebarCollapsed && (
             <div className="min-w-0">
@@ -445,7 +445,7 @@ export function GovernmentShell({
           </nav>
         </div>
 
-        <div className="mt-auto border-t border-white/15 p-4 pb-6">
+        <div className="mt-auto flex-shrink-0 border-t border-white/15 p-4 pb-6">
           <div className={`flex flex-col items-center gap-2 px-3 py-3 ${!sidebarCollapsed ? "flex-row justify-between items-center gap-3 px-3 py-2" : ""}`}>
             <div className="flex size-8 items-center justify-center rounded-full bg-[#dce5d8] text-[#244637] text-xs font-semibold flex-shrink-0">
               {initials}
@@ -482,8 +482,8 @@ export function GovernmentShell({
         id="main-content"
         className={`min-h-screen min-w-0 transition-all duration-300 ${mainContentMargin} px-6 sm:px-8 lg:px-10`}
       >
-        <header className="sticky top-0 z-30 flex min-h-[72px] items-center justify-between gap-4 border-b border-[#dce2d8] bg-[#fdfdf9] px-4 sm:px-6 py-2.5 sm:py-3">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex min-h-[72px] items-center justify-between gap-2 border-b border-[#dce2d8] bg-[#fdfdf9] px-4 sm:gap-4 sm:px-6 py-2.5 sm:py-3">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={toggleSidebar}
@@ -504,22 +504,23 @@ export function GovernmentShell({
             >
               <Menu className="w-4 h-4" aria-hidden="true" />
             </button>
-            <div className="h-4 w-px bg-[#dce2d8] mx-2" />
-            <div>
+            <div className="mx-1 hidden h-4 w-px bg-[#dce2d8] sm:mx-2 sm:block" />
+            <div className="min-w-0">
               <p className="text-xs font-medium text-[#788277] leading-none">Government workspace</p>
-              <h1 className="mt-0.5 text-lg font-semibold tracking-tight text-[#173c32] leading-none">
+              <h1 className="mt-0.5 truncate text-base font-semibold tracking-tight text-[#173c32] leading-none sm:text-lg" title={pageTitle || resolvedActiveItem}>
                 {pageTitle || resolvedActiveItem}
               </h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-shrink-0 items-center gap-2 sm:gap-3">
             <button
               type="button"
-              disabled={notificationsLoading}
-              className="relative flex items-center gap-2 rounded-lg border border-[#cbd6c8] bg-white px-4 py-2 text-sm font-medium whitespace-nowrap transition hover:bg-[#f5f8f5] disabled:opacity-60"
+              onClick={() => handleNavItem("Notifications")}
+              aria-label="View notifications"
+              className="relative flex items-center gap-2 rounded-lg border border-[#cbd6c8] bg-white px-3 py-2 text-sm font-medium whitespace-nowrap transition hover:bg-[#f5f8f5] sm:px-4"
             >
               <Bell className="w-4 h-4" aria-hidden="true" />
-              Notifications
+              <span className="hidden sm:inline">Notifications</span>
               {unreadCount > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#8b392f] text-[10px] font-bold text-white">
                   {unreadCount > 9 ? "9+" : unreadCount}
@@ -534,14 +535,14 @@ export function GovernmentShell({
                 aria-label="User profile"
                 aria-expanded={profileDropdownOpen}
               >
-                <div className="flex size-6 items-center justify-center rounded-full bg-[#dce5d8] text-[#244637] text-xs font-semibold">
+                <div className="flex size-6 flex-shrink-0 items-center justify-center rounded-full bg-[#dce5d8] text-[#244637] text-xs font-semibold">
                   {initials}
                 </div>
-                <p className="text-sm font-medium text-[#173c32] truncate">
+                <p className="hidden max-w-[160px] truncate text-sm font-medium text-[#173c32] sm:block">
                   {user?.name || "Officer"}
                 </p>
                 <ChevronDown
-                  className={`w-4 h-4 text-[#687468] transition-transform duration-200 ${
+                  className={`hidden w-4 h-4 text-[#687468] transition-transform duration-200 sm:block ${
                     profileDropdownOpen ? "rotate-180" : ""
                   }`}
                 />
@@ -565,6 +566,10 @@ export function GovernmentShell({
                 <div className="py-1">
                   <button
                     type="button"
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      handleNavItem("My Profile");
+                    }}
                     className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#173c32] hover:bg-[#f5f8f5] transition-colors"
                   >
                     <User className="w-4 h-4 text-[#c4d3bf]" />
@@ -610,6 +615,18 @@ export function ReportDetailsDialog({
     setOpen(true);
   }, [report]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [open, onClose]);
+
   if (!open || !report) return null;
 
   return (
@@ -619,13 +636,16 @@ export function ReportDetailsDialog({
       aria-modal="true"
       aria-labelledby="report-details-title"
       onClick={(e) => {
-        if (e.target === e.currentTarget) setOpen(false);
+        if (e.target === e.currentTarget) {
+          setOpen(false);
+          onClose();
+        }
       }}
     >
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-[#187a58]">{report.id}</p>
+            <p className="text-sm font-medium text-[#187a58]">{report.referenceCode || report.id}</p>
             <h3 id="report-details-title" className="mt-1 text-2xl font-bold">
               Report Details
             </h3>

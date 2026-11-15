@@ -6,7 +6,7 @@ import BrandLogo from "../components/BrandLogo";
 import { Eye, EyeOff } from "lucide-react";
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 export default function AdminLoginPage() {

@@ -162,6 +162,8 @@ model User {
   routingRules         RoutingRule[]       @relation("RoutingRuleOfficer")
   slaPoliciesCreated  SlaPolicy[]         @relation("SlaPolicyCreator")
   officials           Official[]          @relation("OfficialOfUser")
+  uploadedAttachments ReportAttachment[] @relation("AttachmentOwner")
+  citizenVerifications CitizenVerification[] @relation("VerificationCitizen")
 
   @@index([wardId])
   @@index([subCountyId])
@@ -465,6 +467,7 @@ model Escalation {
   reason          String
   priority        ReportPriority @default(HIGH)
   status          EscalationStatus @default(OPEN)
+  previousStatus  ReportStatus?
   escalatedById   String?
   escalatedBy     User?    @relation("EscalationRaisedBy", fields: [escalatedById], references: [id], onDelete: SetNull)
   resolvedById    String?
@@ -519,6 +522,7 @@ model FieldInspection {
   report      Report   @relation("InspectionOfReport", fields: [reportId], references: [id], onDelete: Cascade)
   officerId   String
   officer     User     @relation("OfficerOfInspection", fields: [officerId], references: [id], onDelete: Cascade)
+  mediaUrls   String[] @default([])
   findings    String?
   actionTaken String?
   status      String   @default("PENDING")
@@ -561,6 +565,8 @@ model ResolutionSubmission {
 }
 
 model CitizenVerification {
+  citizenId  String?
+  citizen    User?   @relation("VerificationCitizen", fields: [citizenId], references: [id], onDelete: SetNull)
   id         String             @id @default(uuid())
   reportId    String
   report      Report             @relation("VerificationOfReport", fields: [reportId], references: [id], onDelete: Cascade)
@@ -724,14 +730,17 @@ model DuplicateLink {
 
 model ReportAttachment {
   id         String   @id @default(uuid())
-  reportId   String
-  report     Report   @relation("AttachmentOfReport", fields: [reportId], references: [id], onDelete: Cascade)
-  url        String
+  reportId   String?
+  report     Report?  @relation("AttachmentOfReport", fields: [reportId], references: [id], onDelete: SetNull)
+  ownerId    String?
+  owner      User?    @relation("AttachmentOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  url        String   @unique
   name       String?
   mimeType   String?
   sizeBytes Int?
   createdAt  DateTime @default(now())
 
   @@index([reportId])
+  @@index([ownerId])
   @@map("report_attachments")
 }

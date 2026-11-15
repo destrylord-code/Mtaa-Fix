@@ -29,6 +29,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   authHandoffSchema,
+  updateProfileSchema,
 } from '../validators/authValidator.js';
 
 const router = express.Router();
@@ -70,7 +71,7 @@ postWithFallback(
 );
 
 getWithFallback('/me', authenticate, getCurrentUser);
-router.patch('/me', authenticate, updateProfile);
-router.patch(`/api/auth/me`, authenticate, updateProfile);
+router.patch('/me', authenticate, validate(updateProfileSchema), updateProfile);
+router.patch(`/api/auth/me`, authenticate, validate(updateProfileSchema), updateProfile);
 
 export default router;

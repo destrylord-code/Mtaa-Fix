@@ -1,4 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
+import { createHash, createHmac } from 'node:crypto';
+const hash = (value) => createHash('sha256').update(value).digest('hex');
+const hashCode = (value) => createHmac('sha256', process.env.JWT_SECRET || 'test-only-otp-key').update(value).digest('hex');
 import { getPrismaClient, checkIsPrisma } from './client.js';
 import { memoryStore } from './memoryStore.js';
 
@@ -58,101 +61,42 @@ export const tokenRepository = {
   },
 
   async createRefreshToken({ token, userId, expiresAt }) {
-    const id = uuidv4();
-    const record = { id, token, userId, expiresAt, revokedAt: null, createdAt: new Date() };
-
-    if (checkIsPrisma()) {
-      try {
-        return await getPrismaClient().refreshToken.create({
-          data: { token, userId, expiresAt },
-        });
-      } catch (err) {
-        // Unique constraint on `token`: an existing record (possibly revoked)
-        // conflicts with the new value. Reactivate and reuse that record
-        // instead of silently falling back to the memory store, which would
-        // leave the token invisible to Prisma-based lookups.
-        const existing = await getPrismaClient().refreshToken.findUnique({ where: { token } });
-        if (existing) {
-          return await getPrismaClient().refreshToken.update({
-            where: { token },
-            data: { userId, expiresAt, revokedAt: null },
-          });
-        }
-        console.warn('[DB] Prisma createRefreshToken failed:', err.message);
-      }
-    }
-
-    memoryStore.refreshTokens.set(token, record);
+    const record = { id: uuidv4(), token: hash(token), userId, expiresAt, revokedAt: null, createdAt: new Date() };
+    if (checkIsPrisma()) return getPrismaClient().refreshToken.create({ data: record });
+    memoryStore.refreshTokens.set(record.token, record);
     return record;
   },
 
   async findRefreshToken(token) {
     if (!token) return null;
-
-    if (checkIsPrisma()) {
-      try {
-        const found = await getPrismaClient().refreshToken.findUnique({
-          where: { token },
-          include: { user: true },
-        });
-        if (found) return found;
-        // Prisma is available but the token was not found in the database.
-        // Fall through to the memory store in case it was stored there via
-        // the createRefreshToken fallback path.
-      } catch (err) {
-        console.warn('[DB] Prisma findRefreshToken failed, using memory fallback:', err.message);
-      }
-    }
-
-    const record = memoryStore.refreshTokens.get(token);
-    if (!record) return null;
-    const user = memoryStore.users.get(record.userId);
-    return { ...record, user: user ? { ...user } : null };
+    const key = hash(token);
+    if (checkIsPrisma()) return getPrismaClient().refreshToken.findUnique({ where: { token: key }, include: { user: true } });
+    const record = memoryStore.refreshTokens.get(key);
+    return record ? { ...record, user: memoryStore.users.get(record.userId) || null } : null;
   },
 
   async revokeRefreshToken(token) {
-    if (!token) return;
-
+    if (!token) return false;
+    const key = hash(token);
     if (checkIsPrisma()) {
-      try {
-        await getPrismaClient().refreshToken.update({
-          where: { token },
-          data: { revokedAt: new Date() },
-        });
-        return;
-      } catch (err) {
-        console.warn('[DB] Prisma revokeRefreshToken failed:', err.message);
-      }
+      const result = await getPrismaClient().refreshToken.updateMany({
+        where: { token: key, revokedAt: null, expiresAt: { gt: new Date() } }, data: { revokedAt: new Date() },
+      });
+      return result.count === 1;
     }
-
-    const record = memoryStore.refreshTokens.get(token);
-    if (record) {
-      record.revokedAt = new Date();
-      memoryStore.refreshTokens.set(token, record);
-    }
+    const record = memoryStore.refreshTokens.get(key);
+    if (!record || record.revokedAt || record.expiresAt <= new Date()) return false;
+    record.revokedAt = new Date();
+    return true;
   },
 
   async revokeAllUserRefreshTokens(userId) {
     if (!userId) return;
-
     if (checkIsPrisma()) {
-      try {
-        await getPrismaClient().refreshToken.updateMany({
-          where: { userId },
-          data: { revokedAt: new Date() },
-        });
-        return;
-      } catch (err) {
-        console.warn('[DB] Prisma revokeAllUserRefreshTokens failed:', err.message);
-      }
+      await getPrismaClient().refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+      return;
     }
-
-    for (const [key, item] of memoryStore.refreshTokens.entries()) {
-      if (item.userId === userId) {
-        item.revokedAt = new Date();
-        memoryStore.refreshTokens.set(key, item);
-      }
-    }
+    for (const item of memoryStore.refreshTokens.values()) if (item.userId === userId) item.revokedAt = new Date();
   },
 
   // ---------------- VERIFICATION TOKEN OPERATIONS ----------------
@@ -161,8 +105,8 @@ export const tokenRepository = {
     const record = {
       id,
       identifier: identifier.toLowerCase().trim(),
-      code: code || null,
-      token,
+      code: code ? hashCode(code) : null,
+      token: hash(token),
       type: type || 'EMAIL',
       userId: userId || null,
       expiresAt,
@@ -182,13 +126,13 @@ export const tokenRepository = {
           },
         });
       } catch (err) {
-        console.warn('[DB] Prisma createVerificationToken failed:', err.message);
+        throw err;
       }
     }
 
-    memoryStore.verificationTokens.set(token, record);
+    memoryStore.verificationTokens.set(record.token, record);
     if (code) {
-      memoryStore.verificationTokens.set(`${record.identifier}:${code}`, record);
+      memoryStore.verificationTokens.set(`${record.identifier}:${hashCode(code)}`, record);
     }
     return record;
   },
@@ -197,39 +141,39 @@ export const tokenRepository = {
     if (checkIsPrisma()) {
       try {
         if (token) {
-          return await getPrismaClient().verificationToken.findUnique({ where: { token } });
+          return await getPrismaClient().verificationToken.findUnique({ where: { token: hash(token) } });
         }
         if (identifier && code) {
           return await getPrismaClient().verificationToken.findFirst({
             where: {
               identifier: identifier.toLowerCase().trim(),
-              code,
+              code: hashCode(code),
             },
           });
         }
       } catch (err) {
-        console.warn('[DB] Prisma findVerificationToken failed:', err.message);
+        throw err;
       }
     }
 
-    if (token && memoryStore.verificationTokens.has(token)) {
-      return memoryStore.verificationTokens.get(token);
+    if (token && memoryStore.verificationTokens.has(hash(token))) {
+      return memoryStore.verificationTokens.get(hash(token));
     }
 
     if (identifier && code) {
-      const key = `${identifier.toLowerCase().trim()}:${code}`;
+      const key = `${identifier.toLowerCase().trim()}:${hashCode(code)}`;
       if (memoryStore.verificationTokens.has(key)) {
         return memoryStore.verificationTokens.get(key);
       }
     }
 
     for (const item of memoryStore.verificationTokens.values()) {
-      if (token && item.token === token) return item;
+      if (token && item.token === hash(token)) return item;
       if (
         identifier &&
         code &&
         item.identifier === identifier.toLowerCase().trim() &&
-        item.code === code
+        item.code === hashCode(code)
       ) {
         return item;
       }
@@ -243,17 +187,17 @@ export const tokenRepository = {
       try {
         await getPrismaClient().verificationToken.deleteMany({
           where: {
-            OR: [{ id: idOrToken }, { token: idOrToken }],
+            OR: [{ id: idOrToken }, { token: hash(idOrToken) }],
           },
         });
         return;
       } catch (err) {
-        console.warn('[DB] Prisma deleteVerificationToken failed:', err.message);
+        throw err;
       }
     }
 
     for (const [key, item] of memoryStore.verificationTokens.entries()) {
-      if (item.id === idOrToken || item.token === idOrToken) {
+      if (item.id === idOrToken || item.token === hash(idOrToken)) {
         memoryStore.verificationTokens.delete(key);
       }
     }
@@ -262,19 +206,19 @@ export const tokenRepository = {
   // ---------------- PASSWORD RESET TOKEN OPERATIONS ----------------
   async createPasswordResetToken({ userId, token, expiresAt }) {
     const id = uuidv4();
-    const record = { id, userId, token, expiresAt, createdAt: new Date() };
+    const record = { id, userId, token: hash(token), expiresAt, createdAt: new Date() };
 
     if (checkIsPrisma()) {
       try {
         return await getPrismaClient().passwordResetToken.create({
-          data: { token, userId, expiresAt },
+          data: { token: hash(token), userId, expiresAt },
         });
       } catch (err) {
-        console.warn('[DB] Prisma createPasswordResetToken failed:', err.message);
+        throw err;
       }
     }
 
-    memoryStore.passwordResetTokens.set(token, record);
+    memoryStore.passwordResetTokens.set(hash(token), record);
     return record;
   },
 
@@ -284,35 +228,50 @@ export const tokenRepository = {
     if (checkIsPrisma()) {
       try {
         return await getPrismaClient().passwordResetToken.findUnique({
-          where: { token },
+          where: { token: hash(token) },
           include: { user: true },
         });
       } catch (err) {
-        console.warn('[DB] Prisma findPasswordResetToken failed:', err.message);
+        throw err;
       }
     }
 
-    const record = memoryStore.passwordResetTokens.get(token);
+    const record = memoryStore.passwordResetTokens.get(hash(token));
     if (!record) return null;
     const user = memoryStore.users.get(record.userId);
     return { ...record, user: user ? { ...user } : null };
   },
 
+  async consumePasswordResetToken(token) {
+    const key = hash(token);
+    if (checkIsPrisma()) {
+      const result = await getPrismaClient().passwordResetToken.deleteMany({ where: { token: key, expiresAt: { gt: new Date() } } });
+      return result.count === 1;
+    }
+    const record = memoryStore.passwordResetTokens.get(key);
+    if (!record || record.expiresAt <= new Date()) return false;
+    memoryStore.passwordResetTokens.delete(key);
+    return true;
+  },
+  async deletePasswordResetTokensForUser(userId) {
+    if (checkIsPrisma()) { await getPrismaClient().passwordResetToken.deleteMany({ where: { userId } }); return; }
+    for (const [key, record] of memoryStore.passwordResetTokens) if (record.userId === userId) memoryStore.passwordResetTokens.delete(key);
+  },
   async deletePasswordResetToken(token) {
     if (!token) return;
 
     if (checkIsPrisma()) {
       try {
         await getPrismaClient().passwordResetToken.deleteMany({
-          where: { token },
+          where: { token: hash(token) },
         });
         return;
       } catch (err) {
-        console.warn('[DB] Prisma deletePasswordResetToken failed:', err.message);
+        throw err;
       }
     }
 
-    memoryStore.passwordResetTokens.delete(token);
+    memoryStore.passwordResetTokens.delete(hash(token));
   },
 };
 

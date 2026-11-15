@@ -1,3 +1,4 @@
+import './setup.js';
 import http from 'http';
 import app from '../index.js';
 import db from '../config/db.js';
@@ -23,9 +24,9 @@ const request = (method, path, body, token) => new Promise((resolve, reject) => 
 const server = app.listen(port, async () => {
   try {
     const testId = Date.now();
-    const admin = await db.createUser({ name: 'Operations Admin', email: `operations-admin-${testId}@example.com`, password: 'hashed', role: 'ADMIN' });
+    const admin = await db.createUser({ name: 'Operations Admin', email: `operations-admin-${testId}@example.com`, password: 'hashed', isVerified: true, role: 'SUPER_ADMIN' });
     const officer = await db.createOfficer({ name: 'Operations Officer', email: `operations-officer-${testId}@example.com`, password: 'hashed' });
-    const reporter = await db.createUser({ name: 'Reporter', email: `operations-reporter-${testId}@example.com`, password: 'hashed', role: 'CITIZEN' });
+    const reporter = await db.createUser({ name: 'Reporter', email: `operations-reporter-${testId}@example.com`, password: 'hashed', isVerified: true, role: 'CITIZEN' });
     const token = generateAccessToken({ id: admin.id, email: admin.email, role: admin.role });
     const report = await db.createReport({ title: 'Operations test report', description: 'A report for assignment testing.', category: 'ROADS', reporterId: reporter.id });
 

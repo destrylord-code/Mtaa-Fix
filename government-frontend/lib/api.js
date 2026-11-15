@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const TOKEN_KEY = 'crs_government_access_token';
 const SESSION_COOKIE_PATH = '/api/session';
 
@@ -146,17 +146,18 @@ export function onSessionExpired(listener) {
  */
 export async function apiFetch(path, { method = 'GET', body, headers = {}, signal, cache } = {}) {
   const token = getToken();
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
     credentials: 'include',
     signal,
     cache,
     headers: {
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    ...(body ? { body: isFormData ? body : JSON.stringify(body) } : {}),
   });
 
   if (response.status === 401) {

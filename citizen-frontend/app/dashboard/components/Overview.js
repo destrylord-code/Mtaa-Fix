@@ -15,7 +15,7 @@ import StatCard from "../../components/StatCard";
 import { normalizeReport, formatDate, toSentenceCase } from "../utils/reportUtils";
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 const TOKEN_KEY = "crs_citizen_access_token";
@@ -158,7 +158,7 @@ export default function Overview({ token, user, onReportClick }) {
           <button
             type="button"
             onClick={() => onReportClick?.("My Reports")}
-            className="text-sm font-semibold text-[#244637] underline-offset-4 hover:underline"
+            className="-mx-2 rounded-lg px-2 py-2 text-sm font-semibold text-[#244637] underline-offset-4 transition hover:bg-[#f5f8f5] hover:underline"
           >
             View all
           </button>
@@ -188,7 +188,7 @@ export default function Overview({ token, user, onReportClick }) {
                 <div className="min-w-0">
                   <p className="font-medium capitalize">{toSentenceCase(report.title)}</p>
                   <p className="mt-1 text-xs text-[#7a8378]">
-                    {report.id} · {toSentenceCase(report.location || "Location not specified")}
+                    <span className="font-medium text-[#187a58]">{report.referenceCode || report.id}</span> · {toSentenceCase(report.location || "Location not specified")}
                   </p>
                   <p className="mt-2 text-xs text-[#687468]">
                     {formatDate(report.date)}

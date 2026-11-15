@@ -4,8 +4,11 @@
   "private": true,
   "description": "Root development launcher for the MTAA Fix applications",
   "scripts": {
+    "setup": "npm install && npm --prefix backend install && npm --prefix citizen-frontend install && npm --prefix admin-dashboard install && npm --prefix government-frontend install",
     "predev": "node scripts/check-dev-ports.mjs",
-    "dev": "concurrently --kill-others --names \"backend,citizen-frontend,admin-dashboard,government-frontend\" --prefix \"[{name}]\" --prefix-colors \"blue,green,yellow,magenta\" \"npm --prefix backend run dev\" \"npm --prefix citizen-frontend run dev -- --port 3000\" \"npm --prefix admin-dashboard run dev -- --port 3001\" \"npm --prefix government-frontend run dev -- --port 3002\""
+    "dev": "concurrently --kill-others --names \"backend,citizen-frontend,admin-dashboard,government-frontend\" --prefix \"[{name}]\" --prefix-colors \"blue,green,yellow,magenta\" \"npm --prefix backend run dev\" \"npm --prefix citizen-frontend run dev -- --port 3000\" \"npm --prefix admin-dashboard run dev -- --port 3001\" \"npm --prefix government-frontend run dev -- --port 3002\"",
+    "predemo": "node scripts/check-dev-ports.mjs",
+    "demo": "concurrently --kill-others --names \"backend,citizen,admin,government\" --prefix \"[{name}]\" --prefix-colors \"blue,green,yellow,magenta\" \"npm --prefix backend run demo\" \"npm --prefix citizen-frontend run dev -- --port 3000\" \"npm --prefix admin-dashboard run dev -- --port 3001\" \"npm --prefix government-frontend run dev -- --port 3002\""
   },
   "devDependencies": {
     "concurrently": "^10.0.6"

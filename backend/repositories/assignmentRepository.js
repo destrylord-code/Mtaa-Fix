@@ -15,7 +15,7 @@ const assignmentRepository = {
     };
     if (checkIsPrisma()) {
       try { return await getPrismaClient().assignment.create({ data: assignment }); }
-      catch (error) { console.warn('[DB] Prisma createAssignment failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     memoryStore.assignments.set(assignment.id, assignment);
     return { ...assignment };
@@ -27,7 +27,7 @@ const assignmentRepository = {
           where: { ...(reportId && { reportId }), ...(officerId && { officerId }) },
           orderBy: { createdAt: 'desc' },
         });
-      } catch (error) { console.warn('[DB] Prisma findAssignments failed, falling back to memory:', error.message); }
+      } catch (error) { throw error; }
     }
     return [...memoryStore.assignments.values()]
       .filter((item) => (!reportId || item.reportId === reportId) && (!officerId || item.officerId === officerId))
@@ -36,7 +36,7 @@ const assignmentRepository = {
   async findAssignmentById(id) {
     if (checkIsPrisma()) {
       try { return await getPrismaClient().assignment.findUnique({ where: { id } }); }
-      catch (error) { console.warn('[DB] Prisma findAssignmentById failed, falling back to memory:', error.message); }
+      catch (error) { throw error; }
     }
     return memoryStore.assignments.get(id) || null;
   },

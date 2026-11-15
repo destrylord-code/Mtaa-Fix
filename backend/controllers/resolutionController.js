@@ -2,13 +2,15 @@ import db from '../config/db.js';
 import { recordStatusHistory } from '../services/statusWorkflow.js';
 import { canAccessReport, canChangeStatus, canPerformTransition } from '../services/jurisdiction.js';
 import { notifyUser } from '../services/notifyService.js';
+import { validateMediaUrls } from '../services/reportValidation.js';
+import { isValidTransition } from '../services/statusWorkflow.js';
 
 function isTechnicalOrOversight(user) {
-  return user && ['TECHNICAL_HEAD', 'CHIEF_OFFICER', 'CECM', 'GOVERNOR', 'ADMIN', 'SUPER_ADMIN'].includes(user.role);
+  return user && ['TECHNICAL_HEAD', 'CHIEF_OFFICER', 'ADMIN', 'SUPER_ADMIN'].includes(user.role);
 }
 
 function isFieldOrTechnical(user) {
-  return user && ['FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER', 'CECM', 'GOVERNOR', 'ADMIN', 'SUPER_ADMIN'].includes(user.role);
+  return user && ['FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER'].includes(user.role);
 }
 
 export const createResolutionSubmission = async (req, res, next) => {
@@ -37,10 +39,15 @@ export const createResolutionSubmission = async (req, res, next) => {
       });
     }
 
+    if (['FIELD_OFFICER', 'TECHNICAL_SUPERVISOR'].includes(req.user.role) && report.assignedOfficerId !== req.user.id && req.user.role !== 'TECHNICAL_SUPERVISOR') {
+      return res.status(403).json({ status: 'error', message: 'Only the assigned officer may propose this resolution.' });
+    }
+    validateMediaUrls(mediaUrls || []);
+    if (!isValidTransition(report.status, 'RESOLUTION_SUBMITTED')) return res.status(409).json({ status: 'error', message: 'The report is not ready for a resolution proposal.' });
     const submission = await db.createResolutionSubmission({
       reportId,
       submittedById: req.user.id,
-      status: status || 'PENDING',
+      status: 'PENDING',
       notes,
       mediaUrls,
     });
@@ -122,6 +129,7 @@ export const approveResolution = async (req, res, next) => {
       });
     }
 
+    if (!['RESOLUTION_SUBMITTED', 'AWAITING_CITIZEN_VERIFICATION'].includes(report.status)) return res.status(409).json({ status: 'error', message: 'The report is not awaiting technical approval.' });
     const updated = await db.updateResolutionSubmission(req.params.id, { status: 'ACCEPTED' });
 
     if (report.status !== 'RESOLVED') {
@@ -131,11 +139,14 @@ export const approveResolution = async (req, res, next) => {
           message: `Forbidden: Role '${req.user.role}' cannot resolve this report.`,
         });
       }
-      await db.updateReport(submission.reportId, {
+      const changed = await db.transitionReport(submission.reportId, report.status, {
         status: 'RESOLVED',
+        resolutionNotes: submission.notes,
+        resolutionMediaUrls: submission.mediaUrls,
         resolutionStatus: 'PENDING',
         resolvedAt: new Date(),
       });
+      if (!changed) return res.status(409).json({ status: 'error', message: 'The report changed. Refresh and try again.' });
       await recordStatusHistory({
         reportId: submission.reportId,
         fromStatus: report.status,
@@ -199,6 +210,7 @@ export const rejectResolution = async (req, res, next) => {
       });
     }
 
+    if (!isValidTransition(report.status, 'IN_PROGRESS')) return res.status(409).json({ status: 'error', message: 'This report cannot be returned for correction.' });
     const updated = await db.updateResolutionSubmission(req.params.id, {
       status: 'REJECTED',
       notes: reason,

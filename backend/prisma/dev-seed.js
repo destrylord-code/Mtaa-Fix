@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
+import { randomInt } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -24,8 +25,8 @@ const REF_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const REF_DIGITS = '0123456789';
 function generateReferenceCode() {
   let code = 'MT';
-  for (let i = 0; i < 2; i++) code += REF_LETTERS[Math.floor(Math.random() * REF_LETTERS.length)];
-  for (let i = 0; i < 3; i++) code += REF_DIGITS[Math.floor(Math.random() * REF_DIGITS.length)];
+  for (let i = 0; i < 2; i++) code += REF_LETTERS[randomInt(REF_LETTERS.length)];
+  for (let i = 0; i < 3; i++) code += REF_DIGITS[randomInt(REF_DIGITS.length)];
   return code;
 }
 const SEED_REF_CODES = new Set();
@@ -212,15 +213,15 @@ const TEST_ACCOUNTS = [
 ];
 
 const sslDisabled = process.env.PGSSL_DISABLE === 'true';
-const prisma = new PrismaClient({
-  adapter: new PrismaPg({
+const connection = process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {
     host: process.env.PGHOST,
     port: Number(process.env.PGPORT || 5432),
     user: process.env.PGUSER,
     password: process.env.PGPASSWORD,
     database: process.env.PGDATABASE,
-    ...(sslDisabled ? {} : { ssl: { rejectUnauthorized: false } }),
-  }),
+};
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ ...connection, ...(sslDisabled ? {} : { ssl: { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false', ...(process.env.PGSSL_CA ? { ca: process.env.PGSSL_CA } : {}) } }), }),
 });
 
 async function main() {
@@ -383,19 +384,7 @@ async function main() {
 
     const user = await prisma.user.upsert({
       where: { email: acc.email },
-      update: {
-        name: acc.name,
-        role: acc.role,
-        countyId,
-        subCountyId,
-        wardId,
-        departmentId,
-        isActive: true,
-        isVerified: true,
-        emailVerified: true,
-        phoneVerified: false,
-        password: hashedPassword,
-      },
+      update: {},
       create: {
         name: acc.name,
         email: acc.email,
@@ -639,7 +628,7 @@ async function main() {
   console.log('Dev seed complete.');
   console.log('══════════════════════════════════════════════════════════════════');
   console.log('');
-  console.log('Test Accounts (all use password: TestPassword123!)');
+  console.log('Test Accounts (initial password: TestPassword123!; existing accounts are unchanged)');
   console.log('──────────────────────────────────────────────────────────────');
   for (const acc of createdUsers) {
     const loginApp =
@@ -665,9 +654,9 @@ async function main() {
   console.log('');
   console.log('To start all three applications:');
   console.log('  cd backend && npm run dev          (port 5000)');
-  console.log('  cd citizen-frontend && npm run dev (port 3002)');
-  console.log('  cd government-frontend && npm run dev (port 3001)');
-  console.log('  cd admin-dashboard && npm run dev  (port 3000)');
+  console.log('  cd citizen-frontend && npm run dev (port 3000)');
+  console.log('  cd government-frontend && npm run dev (port 3002)');
+  console.log('  cd admin-dashboard && npm run dev  (port 3001)');
   console.log('');
 }
 

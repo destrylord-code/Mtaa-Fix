@@ -14,13 +14,13 @@ const reportFollowUpRepository = {
     };
     if (checkIsPrisma()) {
       try {
-        return await getPrismaClient().reportFollowUp.create({ data: followUp });
+        return await getPrismaClient().reportFollowUp.create({ data: followUp , include: { report: true } });
       } catch (error) {
-        console.warn('[DB] Prisma createFollowUp failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     memoryStore.reportFollowUps.set(followUp.id, followUp);
-    return { ...followUp };
+    return { ...followUp, report: memoryStore.reports.get(followUp.reportId) || null };
   },
   async findFollowUps({ reportId, createdById, type } = {}) {
     if (checkIsPrisma()) {
@@ -31,22 +31,23 @@ const reportFollowUpRepository = {
             ...(createdById && { createdById }),
             ...(type && { type }),
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' }, include: { report: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findFollowUps failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.reportFollowUps.values()]
       .filter((item) => (!reportId || item.reportId === reportId)
         && (!createdById || item.createdById === createdById)
         && (!type || item.type === type))
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((item) => ({ ...item, report: memoryStore.reports.get(item.reportId) || null }));
   },
   async findFollowUpById(id) {
     if (checkIsPrisma()) {
-      try { return await getPrismaClient().reportFollowUp.findUnique({ where: { id } }); }
-      catch (error) { console.warn('[DB] Prisma findFollowUpById failed, falling back to memory:', error.message); }
+      try { return await getPrismaClient().reportFollowUp.findUnique({ where: { id }, include: { report: true } }); }
+      catch (error) { throw error; }
     }
     return memoryStore.reportFollowUps.get(id) || null;
   },

@@ -1,3 +1,4 @@
+import './setup.js';
 import http from 'http';
 
 process.env.NODE_ENV = 'test';
@@ -5,9 +6,8 @@ process.env.PORT = '5055';
 // DATABASE_URL is loaded from .env (local PostgreSQL) — do not override to empty.
 
 const { default: app } = await import('../index.js');
-const { getPrismaClient } = await import('../repositories/client.js');
-
-const prisma = getPrismaClient();
+const { getTestEmails } = await import('../utils/notifier.js');
+const { default: db } = await import('../config/db.js');
 let server;
 
 function request(method, path, body = null, headers = {}) {
@@ -92,10 +92,7 @@ async function runTests() {
       throw new Error('Public registration must assign the CITIZEN role');
     }
 
-    const verificationRecord = await prisma.verificationToken.findFirst({
-      where: { identifier: testEmail },
-    });
-    const verificationCode = verificationRecord?.code;
+    const verificationCode = getTestEmails(testEmail).at(-1)?.code;
     let accessToken = regRes.body.data.accessToken;
     let refreshToken = regRes.body.data.refreshToken;
 
@@ -166,6 +163,10 @@ async function runTests() {
     });
     console.log('✓ POST /api/auth/refresh:', refreshRes.status, refreshRes.body.message);
     if (refreshRes.status !== 200) throw new Error('Token refresh failed');
+    const reusedRefresh = await request('POST', '/api/auth/refresh', { refreshToken });
+    if (reusedRefresh.status !== 401) throw new Error('Refresh token reuse must be rejected');
+    const storedSession = await db.findRefreshToken(refreshRes.body.data.refreshToken);
+    if (storedSession.token === refreshRes.body.data.refreshToken) throw new Error('Refresh bearer secret must be hashed at rest');
     accessToken = refreshRes.body.data.accessToken;
     refreshToken = refreshRes.body.data.refreshToken;
     const forgotRes = await request('POST', '/api/auth/forgot-password', {
@@ -174,19 +175,15 @@ async function runTests() {
     console.log('✓ POST /api/auth/forgot-password:', forgotRes.status, forgotRes.body.message);
     if (forgotRes.status !== 200) throw new Error('Forgot password failed');
     // Reset password: look up the token for THIS user (not just any token)
-    const resetUser = await prisma.user.findUnique({
-      where: { email: testEmail.toLowerCase().trim() },
-    });
-    const resetRecord = await prisma.passwordResetToken.findFirst({
-      where: { userId: resetUser.id },
-    });
-    const resetTokenValue = resetRecord?.token;
+    const resetTokenValue = getTestEmails(testEmail).at(-1)?.token;
     const resetRes = await request('POST', '/api/auth/reset-password', {
       token: resetTokenValue,
       newPassword: 'BrandNewPassword456!',
     });
     console.log('✓ POST /api/auth/reset-password:', resetRes.status, resetRes.body.message);
     if (resetRes.status !== 200) throw new Error('Reset password failed');
+    const reusedReset = await request('POST', '/api/auth/reset-password', { token: resetTokenValue, newPassword: 'AnotherPassword456!' });
+    if (reusedReset.status !== 400) throw new Error('Reset token reuse must be rejected');
 
     // Test login with new password
     const newLoginRes = await request('POST', '/api/auth/login', {
@@ -195,6 +192,9 @@ async function runTests() {
     });
     console.log('✓ POST /api/auth/login (with new password):', newLoginRes.status, newLoginRes.body.message);
     if (newLoginRes.status !== 200) throw new Error('Login with new password failed');
+
+    const profileEscalation = await request('PATCH', '/api/auth/me', { role: 'SUPER_ADMIN', password: 'attacker' }, { Authorization: `Bearer ${newLoginRes.body.data.accessToken}` });
+    if (profileEscalation.status !== 400) throw new Error('Profile privilege escalation must be rejected');
 
     // 8. POST /api/auth/logout
     const logoutRes = await request('POST', '/api/auth/logout', {

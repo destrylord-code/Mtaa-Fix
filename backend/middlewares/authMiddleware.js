@@ -8,10 +8,16 @@ export const authenticate = async (req, res, next) => {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       token = authHeader.split(' ')[1];
     } else if (req.cookies) {
-      // 2. Check cookies. The government frontend writes the session under
-      // 'crs_government_access_token'; keep 'accessToken' as a fallback so
-      // other clients that set that name continue to work.
-      token = req.cookies['crs_government_access_token'] ?? req.cookies.accessToken;
+      // 2. Check cookies. Each frontend writes its session under a role-specific
+      // name (government/admin/citizen). API calls normally use the Bearer
+      // header, but cookie-only requests — e.g. <img src="/uploads/..."> served
+      // through the same-origin Next.js proxy — rely on these. 'accessToken' is
+      // kept as a legacy fallback for older clients.
+      token =
+        req.cookies['crs_government_access_token'] ??
+        req.cookies['crs_admin_access_token'] ??
+        req.cookies['crs_citizen_access_token'] ??
+        req.cookies.accessToken;
     }
 
     if (!token) {

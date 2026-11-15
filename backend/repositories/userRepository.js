@@ -11,7 +11,7 @@ export const userRepository = {
       try {
         return await getPrismaClient().user.findUnique({ where: { email: normalized } });
       } catch (err) {
-        console.warn('[DB] Prisma findUserByEmail failed, using memory store:', err.message);
+        throw err;
       }
     }
 
@@ -31,7 +31,7 @@ export const userRepository = {
       try {
         return await getPrismaClient().user.findUnique({ where: { phone: cleanPhone } });
       } catch (err) {
-        console.warn('[DB] Prisma findUserByPhone failed, using memory store:', err.message);
+        throw err;
       }
     }
 
@@ -61,7 +61,7 @@ export const userRepository = {
       try {
         return await getPrismaClient().user.findUnique({ where: { id } });
       } catch (err) {
-        console.warn('[DB] Prisma findUserById failed, using memory store:', err.message);
+        throw err;
       }
     }
 
@@ -86,6 +86,10 @@ export const userRepository = {
       subCounty: data.subCounty || null,
       ward: data.ward || null,
       address: data.address || null,
+      departmentId: data.departmentId || null,
+      countyId: data.countyId || null,
+      subCountyId: data.subCountyId || null,
+      wardId: data.wardId || null,
       avatarUrl: data.avatarUrl || null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -107,15 +111,18 @@ export const userRepository = {
             subCounty: newUser.subCounty,
             ward: newUser.ward,
             address: newUser.address,
+            departmentId: newUser.departmentId,
+            countyId: newUser.countyId,
+            subCountyId: newUser.subCountyId,
+            wardId: newUser.wardId,
             avatarUrl: newUser.avatarUrl,
           },
         });
       } catch (err) {
         if (err.code === 'P2002' || err.message?.includes('Unique constraint')) {
-          const existing = await this.findUserByEmail(newUser.email);
-          if (existing) return existing;
+          throw err;
         }
-        console.warn('[DB] Prisma createUser failed, using memory store:', err.message);
+        throw err;
       }
     }
 
@@ -131,7 +138,7 @@ export const userRepository = {
           data: { ...updateData, updatedAt: new Date() },
         });
       } catch (err) {
-        console.warn('[DB] Prisma updateUser failed, using memory store:', err.message);
+        throw err;
       }
     }
 
@@ -165,7 +172,7 @@ export const userRepository = {
           orderBy: { name: 'asc' },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findUsers failed, using memory store:', error.message);
+        throw error;
       }
     }
 

@@ -8,6 +8,7 @@ const citizenVerificationRepository = {
       id: uuidv4(),
       reportId: data.reportId,
       officerId: data.officerId || null,
+      citizenId: data.citizenId || null,
       outcome: data.outcome || 'CONFIRMED',
       evidence: data.evidence || null,
       notes: data.notes || null,
@@ -17,7 +18,7 @@ const citizenVerificationRepository = {
       try {
         return await getPrismaClient().citizenVerification.create({ data: verification });
       } catch (error) {
-        console.warn('[DB] Prisma createCitizenVerification failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     memoryStore.citizenVerifications.set(verification.id, verification);
@@ -31,7 +32,7 @@ const citizenVerificationRepository = {
           orderBy: { createdAt: 'desc' },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findVerificationByReportId failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.citizenVerifications.values()]

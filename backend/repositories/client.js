@@ -66,7 +66,7 @@ async function initializePrisma() {
   // Falls back to DATABASE_URL connectionString for backward compatibility.
   // SSL is enabled unless PGSSL_DISABLE=true (local/dev PostgreSQL without SSL).
   const sslDisabled = process.env.PGSSL_DISABLE === 'true';
-  const sslConfig = sslDisabled ? undefined : { rejectUnauthorized: false };
+  const sslConfig = sslDisabled ? undefined : { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false', ...(process.env.PGSSL_CA ? { ca: process.env.PGSSL_CA } : {}) };
 
   let adapterConfig = null;
   if (
@@ -83,6 +83,7 @@ async function initializePrisma() {
       database: process.env.PGDATABASE,
       ...(sslConfig ? { ssl: sslConfig } : {}),
       pgbouncer: false,
+      max: Number(process.env.DB_POOL_SIZE || 10),
       connectionTimeoutMillis: 10_000,
       idleTimeoutMillis: 300_000,
     };
@@ -90,6 +91,7 @@ async function initializePrisma() {
     // Prisma honors sslmode=require and pgbouncer=true from the connection string.
     adapterConfig = {
       connectionString: process.env.DATABASE_URL,
+      max: Number(process.env.DB_POOL_SIZE || 10),
       ...(sslConfig ? { ssl: sslConfig } : {}),
       connectionTimeoutMillis: 5_000,
       idleTimeoutMillis: 300_000,

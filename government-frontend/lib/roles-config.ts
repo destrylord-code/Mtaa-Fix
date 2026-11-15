@@ -465,6 +465,7 @@ export const ROLE_CONFIGS = {
       { group: "Reports Administration", items: ["All Reports", "Report Categories", "Status Configuration"] },
       { group: "System Audit", items: ["Audit Logs", "Authentication Activity", "Administrative Actions"] },
       { group: "System Configuration", items: ["Application Settings", "Notifications Configuration"] },
+      { group: "Notifications", items: ["Notifications"] },
       { group: "My Profile", items: ["My Profile"] },
     ],
   },
@@ -485,6 +486,7 @@ export const ROLE_CONFIGS = {
       { group: "Reports Administration", items: ["All Reports", "Report Categories", "Status Configuration"] },
       { group: "System Audit", items: ["Audit Logs", "Authentication Activity", "Administrative Actions"] },
       { group: "System Configuration", items: ["Application Settings", "Notifications Configuration"] },
+      { group: "Notifications", items: ["Notifications"] },
       { group: "My Profile", items: ["My Profile"] },
     ],
   },
@@ -589,7 +591,7 @@ export function getDepartmentLabel(departmentId) {
   return DEPARTMENT_LABELS[departmentId] || departmentId || "Unassigned";
 }
 
-export default {
+const rolesConfig = {
   ROLE_CONFIGS,
   getRoleRoute,
   getRoleConfig,
@@ -598,3 +600,5 @@ export default {
   getIconForItem,
   getDepartmentLabel,
 };
+
+export default rolesConfig;

@@ -8,7 +8,7 @@ import { X } from "lucide-react";
 import { AdminShell, ReportDetailsDialog } from "../components/AdminShell";
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 const STATUS_OPTIONS = [
@@ -131,7 +131,7 @@ function normalizeReport(report) {
 
   return {
     id: String(
-      report.reportNumber || report.referenceNumber || report.id || "Unknown"
+      report.referenceCode || report.reportNumber || report.referenceNumber || report.id || "Unknown"
     ),
     originalId: report.id,
     issue: getText(report.title || report.issue, "Untitled report"),
@@ -297,7 +297,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     loadReports();

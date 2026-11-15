@@ -200,15 +200,15 @@ const SUBCATEGORY_SEED = {
 };
 
 const sslDisabled = process.env.PGSSL_DISABLE === 'true';
-const prisma = new PrismaClient({
-  adapter: new PrismaPg({
+const connection = process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {
     host: process.env.PGHOST,
     port: Number(process.env.PGPORT || 5432),
     user: process.env.PGUSER,
     password: process.env.PGPASSWORD,
     database: process.env.PGDATABASE,
-    ...(sslDisabled ? {} : { ssl: { rejectUnauthorized: false } }),
-  }),
+};
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ ...connection, ...(sslDisabled ? {} : { ssl: { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false', ...(process.env.PGSSL_CA ? { ca: process.env.PGSSL_CA } : {}) } }), }),
 });
 
 try {

@@ -23,6 +23,10 @@ export function proxy(request) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|brand/).*)',
+    // Guard every app route except static assets and the same-origin API proxy
+    // paths (/api/*, /uploads/*, /health). Those are forwarded to the backend by
+    // next.config.mjs rewrites and authenticated there, so the page guard must
+    // not intercept them (it would redirect /api/auth/login to /login).
+    '/((?!_next/static|_next/image|api/|uploads/|health|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|brand/).*)',
   ],
 };

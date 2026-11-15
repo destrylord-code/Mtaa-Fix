@@ -10,3 +10,6 @@ old-admin-backup.js
 
 # Runtime logs
 *.log
+
+# Arena local verification artifacts
+.arena/

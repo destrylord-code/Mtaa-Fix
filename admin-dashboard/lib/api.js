@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const TOKEN_KEY = 'crs_admin_access_token';
 
 export const getToken = () =>
@@ -17,28 +17,29 @@ export const setToken = (token) => {
 
 export async function apiFetch(path, { method = 'GET', body, headers = {}, retry = true } = {}) {
   const token = getToken();
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     credentials: 'include',
     headers: {
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    ...(body ? { body: isFormData ? body : JSON.stringify(body) } : {}),
   });
 
   if (res.status === 401) {
+    if (retry) {
+      const refreshed = await refreshToken();
+      if (refreshed) return apiFetch(path, { method, body, headers, retry: false });
+    }
     if (typeof window !== 'undefined') {
       setToken(null);
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = '/login';
     }
     throw new Error('Unauthorized - please sign in again.');
-  }
-
-  if (res.status === 401 && retry) {
-    const refreshed = await refreshToken();
-    if (refreshed) return apiFetch(path, { method, body, headers, retry: false });
   }
 
   const data = await res.json().catch(() => ({}));

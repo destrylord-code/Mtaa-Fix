@@ -134,7 +134,7 @@ const locationRepository = {
         });
         if (rows && rows.length > 0) return rows;
       } catch (error) {
-        console.warn('[DB] Prisma findCounties failed, falling back to memory:', error.message);
+        throw error;
       }
     }
 
@@ -155,7 +155,7 @@ const locationRepository = {
         });
         if (county) return county;
       } catch (error) {
-        console.warn('[DB] Prisma findCountyById failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return memoryStore.counties.get(id) || null;
@@ -170,7 +170,7 @@ const locationRepository = {
         });
         if (rows && rows.length > 0) return rows;
       } catch (error) {
-        console.warn('[DB] Prisma findSubCounties failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.subCounties.values()]
@@ -187,7 +187,7 @@ const locationRepository = {
         });
         if (rows && rows.length > 0) return rows;
       } catch (error) {
-        console.warn('[DB] Prisma findWards failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.wards.values()]
@@ -201,7 +201,7 @@ const locationRepository = {
         const subCounty = await getPrismaClient().subCounty.findUnique({ where: { id } });
         if (subCounty) return subCounty;
       } catch (error) {
-        console.warn('[DB] Prisma findSubCountyById failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return memoryStore.subCounties.get(id) || null;
@@ -215,7 +215,7 @@ const locationRepository = {
           where: { name, isActive: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findCountyByName failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.counties.values()].find(
@@ -231,7 +231,7 @@ const locationRepository = {
           where: { countyId, name, isActive: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findSubCountyByName failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.subCounties.values()].find(
@@ -247,7 +247,7 @@ const locationRepository = {
           where: { subCountyId, name, isActive: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findWardByName failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.wards.values()].find(

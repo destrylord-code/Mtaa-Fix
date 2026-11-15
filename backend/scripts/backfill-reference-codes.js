@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import { randomInt } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 /**
@@ -19,10 +20,10 @@ const REF_DIGITS = '0123456789';
 function generateReferenceCode() {
   let code = 'MT';
   for (let i = 0; i < 2; i++) {
-    code += REF_LETTERS[Math.floor(Math.random() * REF_LETTERS.length)];
+    code += REF_LETTERS[randomInt(REF_LETTERS.length)];
   }
   for (let i = 0; i < 3; i++) {
-    code += REF_DIGITS[Math.floor(Math.random() * REF_DIGITS.length)];
+    code += REF_DIGITS[randomInt(REF_DIGITS.length)];
   }
   return code;
 }

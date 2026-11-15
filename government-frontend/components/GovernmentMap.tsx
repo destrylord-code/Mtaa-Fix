@@ -10,7 +10,7 @@ import {
 } from "react-leaflet";
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/$/, "");
 
 // Approximate viewport limits around Kisii County.
@@ -215,6 +215,7 @@ export default function GovernmentMap() {
 
   const [reportError, setReportError] = useState("");
   const [boundaryError, setBoundaryError] = useState("");
+  const [tilesUnavailable, setTilesUnavailable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -252,10 +253,17 @@ export default function GovernmentMap() {
         let page = 1;
         let totalPages = 1;
 
+        const token =
+          typeof window !== "undefined"
+            ? sessionStorage.getItem("crs_government_access_token")
+            : null;
         do {
           const response = await fetch(
             `${API_URL}/api/reports?page=${page}&limit=${limit}`,
-            { cache: "no-store" }
+            {
+              cache: "no-store",
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            }
           );
 
           const payload = await response.json();
@@ -378,6 +386,13 @@ export default function GovernmentMap() {
               : "All reports with coordinates are within the Kisii County boundary."}
           </p>
         ) : null}
+
+        {tilesUnavailable ? (
+          <p className="mt-1 text-[#66572f]">
+            The base map imagery is unavailable right now. The county boundary and
+            report markers below are still accurate.
+          </p>
+        ) : null}
       </div>
 
       <div className="h-[520px] w-full">
@@ -394,6 +409,10 @@ export default function GovernmentMap() {
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            eventHandlers={{
+              tileerror: () => setTilesUnavailable(true),
+              tileload: () => setTilesUnavailable(false),
+            }}
           />
 
           {boundary ? (

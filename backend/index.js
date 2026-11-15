@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -26,6 +26,8 @@ import escalationRoutes from './routes/escalationroutes.js';
 import dashboardRoutes from './routes/dashboardroutes.js';
 import auditLogRoutes from './routes/auditlogroutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import { downloadUpload } from './controllers/uploadController.js';
+import { authenticate } from './middlewares/authMiddleware.js';
 import userRoutes from './routes/userroutes.js';
 import { autoEscalateOverdueReports } from './services/slaService.js';
 
@@ -40,9 +42,13 @@ import {
   isDatabaseConnected,
 } from './repositories/client.js';
 
-dotenv.config();
 
 const app = express();
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
+app.disable('x-powered-by');
+if (process.env.NODE_ENV === 'production' && (!process.env.DATABASE_URL && !process.env.PGHOST || !process.env.CLIENT_URL)) {
+  throw new Error('Production requires DATABASE_URL (or PG*) and CLIENT_URL.');
+}
 
 // --------------------------------------------------
 // SECURITY AND CORS CONFIGURATION
@@ -74,11 +80,6 @@ app.use(
       }
 
       // Read explicitly configured frontend origins.
-      const configuredOrigins = (process.env.CLIENT_URL || "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-
       if (configuredOrigins.includes(origin)) {
         return callback(null, true);
       }
@@ -114,16 +115,17 @@ app.use(
 app.use(compression());
 app.use(cookieParser());
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
 app.use(
   express.urlencoded({
     extended: true,
-    limit: '10mb',
+    limit: '1mb',
   })
 );
 
-// Serve uploaded report images and other media.
-app.use('/uploads', express.static(path.resolve('uploads')));
+// Evidence is private. Ownership/jurisdiction is checked for every file.
+app.get('/uploads/:filename', authenticate, downloadUpload);
+app.use('/api', (req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
 
 if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
@@ -134,9 +136,12 @@ if (process.env.NODE_ENV !== 'test') {
 // --------------------------------------------------
 
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'Community Reporting System API is running smoothly',
+  const databaseReady = isDatabaseConnected();
+  const developmentStore = !databaseReady && process.env.NODE_ENV !== 'production';
+  res.status(databaseReady || developmentStore ? 200 : 503).json({
+    status: databaseReady || developmentStore ? 'success' : 'error',
+    message: databaseReady ? 'Mtaa Fix API is ready' : developmentStore ? 'Mtaa Fix API is running with a non-persistent development store' : 'Database unavailable',
+    database: databaseReady ? 'postgresql' : developmentStore ? 'development-memory' : 'unavailable',
     timestamp: new Date().toISOString(),
   });
 });
@@ -249,7 +254,7 @@ async function startServer() {
   }
 
   if (process.env.NODE_ENV !== 'test') {
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(
         `Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`
       );
@@ -268,7 +273,7 @@ async function startServer() {
     // Enabled via ENABLE_ESCALATION_SCHEDULER=true. Runs every 5 minutes by default.
     if (process.env.ENABLE_ESCALATION_SCHEDULER === 'true') {
       const intervalMs = Number(process.env.ESCALATION_SCHEDULER_INTERVAL_MS) || 300000;
-      setInterval(async () => {
+      const scheduler = setInterval(async () => {
         try {
           const created = await autoEscalateOverdueReports();
           if (created.length > 0) {
@@ -278,6 +283,7 @@ async function startServer() {
           console.error('[SLA] Auto-escalation scheduler error:', err.message);
         }
       }, intervalMs);
+      scheduler.unref();
       console.log(`[SLA] Escalation scheduler enabled (interval: ${intervalMs}ms).`);
     }
   }

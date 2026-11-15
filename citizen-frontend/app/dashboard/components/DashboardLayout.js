@@ -5,7 +5,7 @@ import BrandLogo from "../../components/BrandLogo";
 import { normalizeRole } from "../../../lib/auth";
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 const TOKEN_KEY = "crs_citizen_access_token";

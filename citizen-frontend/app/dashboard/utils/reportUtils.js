@@ -35,6 +35,7 @@ export function normalizeReport(report) {
   return {
     ...report,
     id: String(report.id || report._id || ""),
+    referenceCode: report.referenceCode || report.reference || null,
     date: rawDate ? String(rawDate).slice(0, 10) : "",
     status: statusLabels[rawStatus] || report.status || "Submitted",
     mediaUrls: Array.isArray(report.mediaUrls) ? report.mediaUrls : [],
@@ -64,7 +65,7 @@ export function formatFileSize(size) {
 export function resolveMediaUrl(path, apiBaseUrl) {
   if (!path) return "";
   if (/^https?:\/\//i.test(path)) return path;
-  const base = apiBaseUrl || "http://localhost:5000";
+  const base = apiBaseUrl || "";
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 

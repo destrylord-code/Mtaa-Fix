@@ -11,7 +11,7 @@ export const registerSchema = z.object({
     .or(z.literal('')),
   password: z
     .string()
-    .min(6, 'Password must be at least 6 characters long')
+    .min(10, 'Password must be at least 10 characters long')
     .max(100),
   county: z.string().trim().max(100).optional(),
   subCounty: z.string().trim().max(100).optional(),
@@ -64,10 +64,17 @@ export const resetPasswordSchema = z.object({
   token: z.string().trim().min(1, 'Reset token or code is required'),
   newPassword: z
     .string()
-    .min(6, 'New password must be at least 6 characters long')
+    .min(10, 'New password must be at least 10 characters long')
     .max(100),
   confirmPassword: z.string().optional(),
 });
+
+export const updateProfileSchema = z.object({
+  name: z.string().trim().min(2).max(100).optional(),
+  email: z.string().trim().email().max(254).optional(),
+  phone: z.string().trim().regex(/^[+0-9\s-]{7,20}$/).optional().or(z.literal('')),
+  avatarUrl: z.string().url().max(2048).refine((v) => v.startsWith('https://') || /^\/uploads\//.test(v)).optional().or(z.literal('')),
+}).strict().refine((v) => Object.keys(v).length > 0, 'No profile changes supplied');
 
 export const authHandoffSchema = z.object({
   code: z.string().trim().min(32).max(128),
@@ -81,4 +88,5 @@ export default {
   forgotPasswordSchema,
   resetPasswordSchema,
   authHandoffSchema,
+  updateProfileSchema,
 };

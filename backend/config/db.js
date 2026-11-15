@@ -1,5 +1,6 @@
 import { getPrismaClient, checkIsPrisma } from '../repositories/client.js';
 import { memoryStore } from '../repositories/memoryStore.js';
+import { attachmentRepository } from '../repositories/attachmentRepository.js';
 import { userRepository } from '../repositories/userRepository.js';
 import { tokenRepository } from '../repositories/tokenRepository.js';
 import { reportRepository } from '../repositories/reportRepository.js';
@@ -21,6 +22,7 @@ import escalationRepository from '../repositories/escalationRepository.js';
 import auditLogRepository from '../repositories/auditLogRepository.js';
 
 export const db = {
+  ...attachmentRepository,
   get isPrisma() {
     return checkIsPrisma();
   },

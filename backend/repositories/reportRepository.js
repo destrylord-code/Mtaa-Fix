@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { randomInt } from 'node:crypto';
 import { getPrismaClient, checkIsPrisma } from './client.js';
 import { memoryStore } from './memoryStore.js';
 
@@ -9,10 +10,10 @@ const DIGITS = '0123456789';
 function generateReferenceCode() {
   let code = REFERENCE_PREFIX;
   for (let i = 0; i < 2; i++) {
-    code += LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    code += LETTERS[randomInt(LETTERS.length)];
   }
   for (let i = 0; i < 3; i++) {
-    code += DIGITS[Math.floor(Math.random() * DIGITS.length)];
+    code += DIGITS[randomInt(DIGITS.length)];
   }
   return code;
 }
@@ -28,9 +29,8 @@ async function generateUniqueReferenceCode() {
       try {
         const existing = await getPrismaClient().report.findUnique({ where: { referenceCode: code } });
         if (existing) exists = true;
-      } catch {
-        // If Prisma check fails, fall through to memory-store check
-        exists = Array.from(memoryStore.reports.values()).some((r) => r.referenceCode === code);
+      } catch (err) {
+        throw err;
       }
     } else {
       exists = Array.from(memoryStore.reports.values()).some((r) => r.referenceCode === code);
@@ -82,6 +82,11 @@ export const reportRepository = {
       county: data.county || null,
       subCounty: data.subCounty || null,
       ward: data.ward || null,
+      countyId: data.countyId || null,
+      subCountyId: data.subCountyId || null,
+      wardId: data.wardId || null,
+      categoryId: data.categoryId || null,
+      subcategoryId: data.subcategoryId || null,
       latitude: typeof data.latitude === 'number' ? data.latitude : null,
       longitude: typeof data.longitude === 'number' ? data.longitude : null,
       mediaUrls: Array.isArray(data.mediaUrls) ? data.mediaUrls : [],
@@ -113,8 +118,7 @@ export const reportRepository = {
           },
         });
       } catch (err) {
-        if (!data.reporterId) throw err;
-        console.warn('[DB] Prisma createReport failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 
@@ -139,7 +143,7 @@ export const reportRepository = {
           },
         });
       } catch (err) {
-        console.warn('[DB] Prisma findReportById failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 
@@ -148,6 +152,8 @@ export const reportRepository = {
   },
 
   async findReports({
+    __noAccess: queryNoAccess,
+    mediaUrl,
     reporterId,
     assignedOfficerId,
     departmentId,
@@ -176,6 +182,8 @@ export const reportRepository = {
     if (checkIsPrisma()) {
       try {
         const where = {};
+        if (queryNoAccess) where.id = { in: [] };
+        if (mediaUrl) where.OR = [{ mediaUrls: { has: mediaUrl } }, { resolutionMediaUrls: { has: mediaUrl } }];
         if (reporterId) where.reporterId = reporterId;
         if (assignedOfficerId) where.assignedOfficerId = assignedOfficerId;
         if (status) where.status = status;
@@ -186,9 +194,9 @@ export const reportRepository = {
         if (wardId) where.wardId = wardId;
         if (countyId) where.countyId = countyId;
         if (subCountyId) where.subCountyId = subCountyId;
-        if (ward) where.ward = { contains: ward, mode: 'insensitive' };
-        if (county) where.county = { contains: county, mode: 'insensitive' };
-        if (subCounty) where.subCounty = { contains: subCounty, mode: 'insensitive' };
+        if (ward) where.ward = { equals: ward, mode: 'insensitive' };
+        if (county) where.county = { equals: county, mode: 'insensitive' };
+        if (subCounty) where.subCounty = { equals: subCounty, mode: 'insensitive' };
         if (startDate || endDate) {
           where.createdAt = {};
           if (startDate) where.createdAt.gte = new Date(startDate);
@@ -210,7 +218,7 @@ export const reportRepository = {
             where,
             skip,
             take: limitNum,
-            orderBy: { [sortBy]: sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc' },
+            orderBy: { [['createdAt','updatedAt','title','priority','status'].includes(sortBy) ? sortBy : 'createdAt']: sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc' },
             include: {
               reporter: {
                 select: { id: true, name: true, email: true, phone: true, role: true, ward: true },
@@ -230,13 +238,14 @@ export const reportRepository = {
           reports: items,
         };
       } catch (err) {
-        console.warn('[DB] Prisma findReports failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 
     // Memory store fallback
     let results = Array.from(memoryStore.reports.values());
 
+    if (mediaUrl) results = results.filter((r) => [...(r.mediaUrls || []), ...(r.resolutionMediaUrls || [])].includes(mediaUrl));
     if (reporterId) {
       results = results.filter((r) => r.reporterId === reporterId);
     }
@@ -272,14 +281,14 @@ export const reportRepository = {
       );
     }
     if (ward) {
-      results = results.filter((r) => r.ward && r.ward.toLowerCase().includes(ward.toLowerCase()));
+      results = results.filter((r) => r.ward && r.ward.toLowerCase() === ward.toLowerCase());
     }
     if (county) {
-      results = results.filter((r) => r.county && r.county.toLowerCase().includes(county.toLowerCase()));
+      results = results.filter((r) => r.county && r.county.toLowerCase() === county.toLowerCase());
     }
     if (subCounty) {
       results = results.filter(
-        (r) => r.subCounty && r.subCounty.toLowerCase().includes(subCounty.toLowerCase())
+        (r) => r.subCounty && r.subCounty.toLowerCase() === subCounty.toLowerCase()
       );
     }
     if (startDate) {
@@ -290,6 +299,7 @@ export const reportRepository = {
       const end = new Date(endDate).getTime();
       results = results.filter((r) => new Date(r.createdAt).getTime() <= end);
     }
+    if (queryNoAccess) return { total: 0, page: pageNum, limit: limitNum, totalPages: 0, reports: [] };
     if (search) {
       const q = search.toLowerCase();
       results = results.filter(
@@ -303,8 +313,9 @@ export const reportRepository = {
     }
 
     results.sort((a, b) => {
-      const valA = a[sortBy] ?? a.createdAt;
-      const valB = b[sortBy] ?? b.createdAt;
+      const sortKey = ['createdAt','updatedAt','title','priority','status'].includes(sortBy) ? sortBy : 'createdAt';
+      const valA = a[sortKey] ?? a.createdAt;
+      const valB = b[sortKey] ?? b.createdAt;
       const orderMultiplier = sortOrder.toLowerCase() === 'asc' ? 1 : -1;
       if (valA instanceof Date && valB instanceof Date) {
         return (valA.getTime() - valB.getTime()) * orderMultiplier;
@@ -324,6 +335,18 @@ export const reportRepository = {
     };
   },
 
+  async transitionReport(id, expectedStatus, updateData) {
+    if (checkIsPrisma()) {
+      const result = await getPrismaClient().report.updateMany({ where: { id, status: expectedStatus }, data: { ...updateData, updatedAt: new Date() } });
+      return result.count === 1 ? this.findReportById(id) : null;
+    }
+    const existing = memoryStore.reports.get(id);
+    if (!existing || existing.status !== expectedStatus) return null;
+    const updated = { ...existing, ...updateData, updatedAt: new Date() };
+    memoryStore.reports.set(id, updated);
+    return this.enrichReport(updated);
+  },
+
   async updateReport(id, updateData) {
     if (checkIsPrisma()) {
       try {
@@ -340,7 +363,7 @@ export const reportRepository = {
           },
         });
       } catch (err) {
-        console.warn('[DB] Prisma updateReport failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 
@@ -362,7 +385,7 @@ export const reportRepository = {
         await getPrismaClient().report.delete({ where: { id } });
         return true;
       } catch (err) {
-        console.warn('[DB] Prisma deleteReport failed, falling back to memory:', err.message);
+        throw err;
       }
     }
 

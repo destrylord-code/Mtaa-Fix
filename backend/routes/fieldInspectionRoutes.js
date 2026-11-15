@@ -33,7 +33,7 @@ router.get(
 );
 router.patch(
   '/:id',
-  ...[authenticate, authorizeRoles(...inspectionWriteRoles), validate(updateInspectionSchema)],
+  ...[authenticate, authorizeRoles('FIELD_OFFICER', 'TECHNICAL_SUPERVISOR', 'TECHNICAL_HEAD', 'CHIEF_OFFICER', 'ADMIN', 'SUPER_ADMIN'), validate(updateInspectionSchema)],
   updateInspection
 );
 

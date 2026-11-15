@@ -4,6 +4,7 @@ export const createWorkUpdateSchema = z.object({
   reportId: z.string().trim().min(1, 'Report ID is required'),
   note: z.string().trim().min(1, 'Note is required').max(2000),
   status: z.enum(['IN_PROGRESS', 'COMPLETED', 'NEEDS_CORRECTION']).default('IN_PROGRESS'),
+  mediaUrls: z.array(z.string().max(2048)).max(5).optional(),
 });
 
 export const updateWorkUpdateSchema = z.object({

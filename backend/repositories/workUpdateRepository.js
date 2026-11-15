@@ -9,18 +9,19 @@ const workUpdateRepository = {
       reportId: data.reportId,
       officerId: data.officerId,
       note: data.note,
+      mediaUrls: data.mediaUrls || [],
       status: data.status || 'IN_PROGRESS',
       createdAt: new Date(),
     };
     if (checkIsPrisma()) {
       try {
-        return await getPrismaClient().workUpdate.create({ data: workUpdate });
+        return await getPrismaClient().workUpdate.create({ data: workUpdate , include: { report: true } });
       } catch (error) {
-        console.warn('[DB] Prisma createWorkUpdate failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     memoryStore.workUpdates.set(workUpdate.id, workUpdate);
-    return { ...workUpdate };
+    return { ...workUpdate, report: memoryStore.reports.get(workUpdate.reportId) || null };
   },
   async findWorkUpdates({ reportId, officerId } = {}) {
     if (checkIsPrisma()) {
@@ -30,40 +31,41 @@ const workUpdateRepository = {
             ...(reportId && { reportId }),
             ...(officerId && { officerId }),
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' }, include: { report: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma findWorkUpdates failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     return [...memoryStore.workUpdates.values()]
       .filter((item) => (!reportId || item.reportId === reportId)
         && (!officerId || item.officerId === officerId))
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((item) => ({ ...item, report: memoryStore.reports.get(item.reportId) || null }));
   },
   async findWorkUpdateById(id) {
     if (checkIsPrisma()) {
-      try { return await getPrismaClient().workUpdate.findUnique({ where: { id } }); }
-      catch (error) { console.warn('[DB] Prisma findWorkUpdateById failed, falling back to memory:', error.message); }
+      try { return await getPrismaClient().workUpdate.findUnique({ where: { id }, include: { report: true } }); }
+      catch (error) { throw error; }
     }
-    return memoryStore.workUpdates.get(id) || null;
+    const item = memoryStore.workUpdates.get(id); return item ? { ...item, report: memoryStore.reports.get(item.reportId) || null } : null;
   },
   async updateWorkUpdate(id, updateData) {
     if (checkIsPrisma()) {
       try {
         return await getPrismaClient().workUpdate.update({
           where: { id },
-          data: { ...updateData, updatedAt: new Date() },
+          data: updateData, include: { report: true },
         });
       } catch (error) {
-        console.warn('[DB] Prisma updateWorkUpdate failed, falling back to memory:', error.message);
+        throw error;
       }
     }
     const existing = memoryStore.workUpdates.get(id);
     if (!existing) return null;
     const updated = { ...existing, ...updateData, updatedAt: new Date() };
     memoryStore.workUpdates.set(id, updated);
-    return { ...updated };
+    return { ...updated, report: memoryStore.reports.get(updated.reportId) || null };
   },
 };
 

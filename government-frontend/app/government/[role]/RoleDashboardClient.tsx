@@ -8,13 +8,18 @@ import { isValidRole, getRoleConfig } from "../../../lib/roles-config";
 import { GovernmentShell } from "../../../components/GovernmentShell";
 import { StatCard, EmptyState, LoadingState, ErrorState } from "../../../components";
 import StatusBadge from "../../../components/StatusBadge";
+import GovernmentMapLoader from "../../../components/GovernmentMapLoader";
+import ReportsTable from "../../../components/ReportsTable";
+import WorkspaceSection, { WORKSPACE_TABS } from "../../../components/WorkspaceSection";
+import { X } from "lucide-react";
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+  process.env.NEXT_PUBLIC_API_URL || ""
 ).replace(/\/+$/, "");
 
 type Report = {
   id: string;
+  referenceCode?: string | null;
   title: string;
   category: string;
   subCategory?: string | null;
@@ -47,30 +52,23 @@ type DashboardUser = {
   wardId?: string | null;
   subCountyId?: string | null;
   countyId?: string | null;
+  county?: string | null;
+  subCounty?: string | null;
+  ward?: string | null;
 };
 
 function normalizeStatus(value: unknown): string {
-  const status = String(value || "SUBMITTED")
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_");
-  switch (status) {
-    case "PENDING":
-    case "SUBMITTED":
-      return "Pending";
-    case "UNDER_REVIEW":
-      return "Under Review";
-    case "IN_PROGRESS":
-      return "In Progress";
-    case "RESOLVED":
-      return "Resolved";
-    case "REJECTED":
-      return "Rejected";
-    case "ESCALATED":
-      return "Escalated";
-    default:
-      return "Pending";
-  }
+  const status = String(value || "SUBMITTED").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  const labels: Record<string, string> = {
+    PENDING: "Pending", SUBMITTED: "Pending", DRAFT: "Draft", UNDER_REVIEW: "Under Review",
+    NEEDS_MORE_INFO: "Needs More Info", VERIFIED: "Verified", ASSIGNED: "Assigned",
+    ACKNOWLEDGED: "Acknowledged", INSPECTION_IN_PROGRESS: "Inspection In Progress",
+    IN_PROGRESS: "In Progress", AWAITING_EXTERNAL_AGENCY: "Awaiting External Agency",
+    RESOLUTION_SUBMITTED: "Resolution Submitted", AWAITING_CITIZEN_VERIFICATION: "Awaiting Verification",
+    RESOLVED: "Resolved", CLOSED: "Closed", REOPENED: "Reopened", REJECTED: "Rejected",
+    ESCALATED: "Escalated", DUPLICATE: "Duplicate", CANCELLED: "Cancelled",
+  };
+  return labels[status] || status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
 function parseCoordinate(value: unknown): number | null {
@@ -118,6 +116,7 @@ function normalizeReport(raw: any, index: number): Report {
 
   return {
     id: String(raw.id ?? raw._id ?? raw.reportId ?? `report-${index}`),
+    referenceCode: raw.referenceCode ?? raw.reference ?? null,
     title: displayValue(raw.title, "Untitled report"),
     category: displayValue(raw.category, "Other"),
     subCategory: raw.subCategory ?? null,
@@ -182,10 +181,12 @@ export default function RoleDashboardClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-
-  if (!isValidRole(role)) {
-    return null;
-  }
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const sessionRole = String(sessionUser?.role || "").toUpperCase();
 
@@ -201,7 +202,7 @@ export default function RoleDashboardClient() {
     }
   }, [role, sessionRole, sessionUser, router]);
 
-  const user: DashboardUser | null = sessionUser
+  const user: DashboardUser | null = useMemo(() => sessionUser
     ? {
         id: sessionUser.id,
         name: sessionUser.name,
@@ -211,8 +212,11 @@ export default function RoleDashboardClient() {
         wardId: sessionUser.wardId ?? null,
         subCountyId: sessionUser.subCountyId ?? null,
         countyId: sessionUser.countyId ?? null,
+        county: sessionUser.county ?? null,
+        subCounty: sessionUser.subCounty ?? null,
+        ward: sessionUser.ward ?? null,
       }
-    : null;
+    : null, [sessionUser]);
 
   const roleConfig = getRoleConfig(role);
   const urlTab = searchParams.get("tab");
@@ -228,6 +232,9 @@ export default function RoleDashboardClient() {
   const [reports, setReports] = useState<Report[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [reportsError, setReportsError] = useState("");
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string; code?: string }>>([]);
+  const [notifications, setNotifications] = useState<Array<{ id: string; title: string; message: string; type?: string; isRead?: boolean; createdAt?: string }>>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [overview, setOverview] = useState<any>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
 
@@ -272,7 +279,7 @@ export default function RoleDashboardClient() {
     try {
       const formData = new FormData();
       formData.append('image', file);
-      const res = await apiFetch('/api/upload-image', {
+      const res = await apiFetch('/api/uploads/upload-image', {
         method: 'POST',
         body: formData,
       });
@@ -302,7 +309,7 @@ export default function RoleDashboardClient() {
       };
       await apiFetch('/api/work-updates', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: payload,
       });
       closeWorkUpdateDialog();
       void loadWorkUpdates();
@@ -345,7 +352,7 @@ export default function RoleDashboardClient() {
       };
       await apiFetch('/api/escalations', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: payload,
       });
       closeEscalateDialog();
       void loadEscalations();
@@ -380,7 +387,7 @@ export default function RoleDashboardClient() {
       if (notes) payload.notes = notes;
       await apiFetch(`/api/reports/${dialogReport.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify(payload),
+        body: payload,
       });
       closeStatusDialog();
       // Refresh reports to reflect the status change
@@ -431,9 +438,11 @@ export default function RoleDashboardClient() {
     setShowAssignDialog(false);
   };
 
-  const loadAvailableOfficers = useCallback(async () => {
+  const loadAvailableOfficers = async () => {
     setOfficersLoading(true);
     try {
+      // /api/users/officers is the department-scoped assignment list (governor,
+      // CECM, chief officer, supervisors, etc.). /api/officers is admin-only.
       const res = await apiFetch('/api/users/officers', { cache: 'no-store' });
       const officers = res?.data?.officers ?? res?.data?.users ?? [];
       setAvailableOfficers(officers);
@@ -442,7 +451,7 @@ export default function RoleDashboardClient() {
     } finally {
       setOfficersLoading(false);
     }
-  }, []);
+  };
 
   const handleAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -459,7 +468,7 @@ export default function RoleDashboardClient() {
       if (reason) payload.reason = reason;
       await apiFetch('/api/assignments', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: payload,
       });
       closeAssignDialog();
       void loadReports();
@@ -481,6 +490,86 @@ export default function RoleDashboardClient() {
   const [userDialogLoading, setUserDialogLoading] = useState(false);
   const [deactivateUserId, setDeactivateUserId] = useState<string | null>(null);
   const [deactivateDialogLoading, setDeactivateDialogLoading] = useState(false);
+  const [deactivateTarget, setDeactivateTarget] = useState<any>(null);
+
+  // Data for the generic workspace views (personnel, performance, assignments,
+  // structure directories, audit). Loaded on demand when a matching tab opens.
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [directoryOfficers, setDirectoryOfficers] = useState<any[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [subCounties, setSubCounties] = useState<any[]>([]);
+  const [wards, setWards] = useState<any[]>([]);
+  const [structureLoading, setStructureLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  const loadAssignments = useCallback(async () => {
+    setAssignmentsLoading(true);
+    try {
+      const res = await apiFetch('/api/assignments', { cache: 'no-store' });
+      setAssignments(res?.data?.assignments ?? []);
+    } catch {
+      setAssignments([]);
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }, []);
+
+  const loadDirectoryOfficers = useCallback(async () => {
+    setDirectoryLoading(true);
+    try {
+      const res = await apiFetch('/api/users/officers', { cache: 'no-store' });
+      setDirectoryOfficers(res?.data?.officers ?? res?.data?.users ?? []);
+    } catch {
+      setDirectoryOfficers([]);
+    } finally {
+      setDirectoryLoading(false);
+    }
+  }, []);
+
+  const loadStructure = useCallback(async () => {
+    setStructureLoading(true);
+    try {
+      const countyRes = await apiFetch('/api/locations/counties?search=Kisii', { cache: 'no-store' });
+      const counties = countyRes?.data?.counties ?? countyRes?.data ?? [];
+      const kisii = Array.isArray(counties) ? counties.find((c: any) => /kisii/i.test(c.name)) ?? counties[0] : null;
+      if (kisii?.id) {
+        const scRes = await apiFetch(`/api/locations/counties/${kisii.id}/sub-counties`, { cache: 'no-store' });
+        const scs = scRes?.data?.subCounties ?? scRes?.data ?? [];
+        setSubCounties(Array.isArray(scs) ? scs : []);
+        const wardLists = await Promise.all(
+          (Array.isArray(scs) ? scs : []).map(async (sc: any) => {
+            try {
+              const wRes = await apiFetch(`/api/locations/sub-counties/${sc.id}/wards`, { cache: 'no-store' });
+              const ws = wRes?.data?.wards ?? wRes?.data ?? [];
+              return (Array.isArray(ws) ? ws : []).map((w: any) => ({ ...w, subCountyName: sc.name }));
+            } catch {
+              return [];
+            }
+          }),
+        );
+        setWards(wardLists.flat());
+      }
+    } catch {
+      setSubCounties([]);
+      setWards([]);
+    } finally {
+      setStructureLoading(false);
+    }
+  }, []);
+
+  const loadAuditLogs = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const res = await apiFetch('/api/audit-logs?limit=100', { cache: 'no-store' });
+      setAuditLogs(res?.data?.auditLogs ?? res?.data?.logs ?? res?.data ?? []);
+    } catch {
+      setAuditLogs([]);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
 
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
@@ -521,7 +610,7 @@ export default function RoleDashboardClient() {
         ward: formData.get('ward') || undefined,
         departmentId: formData.get('departmentId') || undefined,
       };
-      await apiFetch('/api/users', { method: 'POST', body: JSON.stringify(payload) });
+      await apiFetch('/api/users', { method: 'POST', body: payload });
       setShowCreateUserDialog(false);
       void loadUsers();
     } catch (error) {
@@ -553,7 +642,7 @@ export default function RoleDashboardClient() {
       if (ward) payload.ward = ward;
       if (departmentId) payload.departmentId = departmentId;
       if (isActive !== undefined) payload.isActive = isActive === 'true';
-      await apiFetch(`/api/users/${editUser.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      await apiFetch(`/api/users/${editUser.id}`, { method: 'PUT', body: payload });
       closeEditUserDialog();
       void loadUsers();
     } catch (error) {
@@ -570,6 +659,7 @@ export default function RoleDashboardClient() {
     try {
       await apiFetch(`/api/users/${id}/${isActive ? 'activate' : 'deactivate'}`, { method: 'PUT' });
       setDeactivateUserId(null);
+      setDeactivateTarget(null);
       void loadUsers();
     } catch (error) {
       setDeactivateDialogLoading(false);
@@ -590,6 +680,16 @@ export default function RoleDashboardClient() {
       setOverview(null);
     } finally {
       setOverviewLoading(false);
+    }
+  }, []);
+
+  const loadDepartments = useCallback(async () => {
+    try {
+      const payload = await apiFetch("/api/departments", { cache: "no-store" });
+      const items = payload?.data?.departments ?? payload?.departments ?? payload?.data ?? [];
+      setDepartments(Array.isArray(items) ? items : []);
+    } catch {
+      setDepartments([]);
     }
   }, []);
 
@@ -688,14 +788,28 @@ export default function RoleDashboardClient() {
     }
   }, []);
 
+  const loadNotifications = useCallback(async () => {
+    setNotificationsLoading(true);
+    try {
+      const payload = await apiFetch("/api/notifications", { cache: "no-store" });
+      const items = payload?.data?.notifications ?? payload?.notifications ?? payload?.data ?? [];
+      setNotifications(Array.isArray(items) ? items : []);
+    } catch {
+      setNotifications([]);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (authStatus !== "authenticated") return;
     void loadOverview();
     void loadReports();
+    void loadDepartments();
     if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') {
       void loadUsers();
     }
-  }, [authStatus, sessionVersion, loadOverview, loadReports, loadUsers, user]);
+  }, [authStatus, sessionVersion, loadOverview, loadReports, loadDepartments, loadUsers, user]);
 
   // Load section-specific data when the corresponding sidebar item becomes
   // active. Each tab loads its own data so every sidebar destination shows
@@ -712,45 +826,123 @@ export default function RoleDashboardClient() {
       void loadResolutions();
     } else if (item.includes("escalat")) {
       void loadEscalations();
+    } else if (item === "notifications") {
+      void loadNotifications();
     }
-  }, [activeItem, loadInspections, loadWorkUpdates, loadFollowUps, loadResolutions, loadEscalations]);
+
+    // Generic workspace views: load the data each destination needs.
+    const personnelTabs = ["chief officers", "field officers", "technical supervisors", "technical officers", "departmental teams", "field team", "personnel directory", "authorized user management"];
+    const assignmentTabs = ["all assignments", "new assignments", "team assignments", "assignment history", "assignment monitoring"];
+    const structureTabs = ["departments", "sub-counties", "wards", "ward directory"];
+    const auditTabs = ["authentication activity", "administrative actions", "decisions history"];
+    const workTabs = ["awaiting review", "approved assessments", "rejected assessments", "verified work", "rejected work", "active projects", "delayed projects", "technical resolution reports"];
+    if (personnelTabs.includes(item)) {
+      void loadDirectoryOfficers();
+    }
+    if (assignmentTabs.includes(item)) {
+      void loadAssignments();
+    }
+    if (structureTabs.includes(item)) {
+      void loadStructure();
+    }
+    if (auditTabs.includes(item) && (role === "ADMIN" || role === "SUPER_ADMIN")) {
+      void loadAuditLogs();
+    }
+    if (workTabs.includes(item)) {
+      void loadWorkUpdates();
+      void loadResolutions();
+    }
+    if (item === "decisions history") {
+      void loadEscalations();
+      void loadResolutions();
+    }
+  }, [activeItem, role, loadInspections, loadWorkUpdates, loadFollowUps, loadResolutions, loadEscalations, loadNotifications, loadDirectoryOfficers, loadAssignments, loadStructure, loadAuditLogs]);
+
+  // Close any open dialog with the Escape key (accessibility / expected behavior).
+  useEffect(() => {
+    const anyOpen =
+      showStatusDialog || showWorkUpdateDialog || showEscalateDialog ||
+      showAssignDialog || showCreateUserDialog || showEditUserDialog || deactivateTarget;
+    if (!anyOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowStatusDialog(false);
+        setShowWorkUpdateDialog(false);
+        setShowEscalateDialog(false);
+        setShowAssignDialog(false);
+        setShowCreateUserDialog(false);
+        setShowEditUserDialog(false);
+        if (!deactivateDialogLoading) setDeactivateTarget(null);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showStatusDialog, showWorkUpdateDialog, showEscalateDialog, showAssignDialog, showCreateUserDialog, showEditUserDialog, deactivateTarget, deactivateDialogLoading]);
 
   const activeLower = activeItem.toLowerCase();
   const isOverviewPage = activeItem === roleConfig.defaultPage;
+
+  // The role's primary "all reports" destination (used by the "View all" link).
+  const reportsNavItem = useMemo(() => {
+    const items: string[] = roleConfig.sidebar.flatMap((g: any) => g.items);
+    return (
+      items.find((i) => /^all .*reports?$/i.test(i) || /^all reports?$/i.test(i) || /^all assignments$/i.test(i)) ||
+      items.find((i) => /report/i.test(i)) ||
+      roleConfig.defaultPage
+    );
+  }, [roleConfig]);
+
+  // Resolve department UUIDs to human-readable names for display.
+  const deptNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const d of departments) map[String(d.id)] = d.name;
+    return map;
+  }, [departments]);
+
+  // Reports with department names resolved (falls back to the raw value).
+  const baseReports = useMemo(
+    () =>
+      reports.map((r) => ({
+        ...r,
+        department: (r.departmentId && deptNameById[String(r.departmentId)]) || r.department,
+      })),
+    [reports, deptNameById]
+  );
+
   const filteredReports = useMemo(() => {
-    if (!activeLower) return reports;
+    if (!activeLower) return baseReports;
 
     // Status-based filters
     if (activeLower.includes("critical") || activeLower.includes("high")) {
-      return reports.filter((r) => r.priority === "CRITICAL" || r.priority === "HIGH");
+      return baseReports.filter((r) => r.priority === "CRITICAL" || r.priority === "HIGH");
     }
     if (activeLower.includes("unresolved") || activeLower.includes("open")) {
-      return reports.filter((r) => !["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status));
+      return baseReports.filter((r) => !["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status));
     }
     if (activeLower.includes("resolved")) {
-      return reports.filter((r) => r.status === "Resolved");
+      return baseReports.filter((r) => r.status === "Resolved");
     }
     if (activeLower.includes("pending")) {
-      return reports.filter((r) => r.status === "Pending" || r.status === "SUBMITTED");
+      return baseReports.filter((r) => r.status === "Pending" || r.status === "SUBMITTED");
     }
     if (activeLower.includes("in progress")) {
-      return reports.filter((r) => r.status === "In Progress");
+      return baseReports.filter((r) => r.status === "In Progress");
     }
     if (activeLower.includes("overdue")) {
-      return reports.filter((r) => {
+      return baseReports.filter((r) => {
         if (["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status)) return false;
-        const ageDays = (Date.now() - new Date(r.createdAt).getTime()) / 86400000;
+        const ageDays = (now - new Date(r.createdAt).getTime()) / 86400000;
         return ageDays > 7;
       });
     }
     if (activeLower.includes("escalat")) {
-      return reports.filter((r) => r.status === "Escalated");
+      return baseReports.filter((r) => r.status === "Escalated");
     }
     if (activeLower.includes("assigned") && !activeLower.includes("unassigned")) {
-      return reports.filter((r) => r.assignedOfficerId === user?.id);
+      return baseReports.filter((r) => r.assignedOfficerId === user?.id);
     }
     if (activeLower.includes("unassigned")) {
-      return reports.filter((r) => !r.assignedOfficerId);
+      return baseReports.filter((r) => !r.assignedOfficerId);
     }
 
     // Category-based filters
@@ -766,13 +958,13 @@ export default function RoleDashboardClient() {
     };
     for (const [key, catName] of Object.entries(categoryMap)) {
       if (activeLower.includes(key)) {
-        return reports.filter((r) => r.category === catName);
+        return baseReports.filter((r) => r.category === catName);
       }
     }
 
     // "all reports" variants — show everything
-    return reports;
-  }, [reports, activeLower, user]);
+    return baseReports;
+  }, [baseReports, activeLower, user, now]);
 
   // Derived datasets for dedicated pages (computed from already-loaded backend data).
   const reportsByDepartment = useMemo(() => {
@@ -801,6 +993,26 @@ export default function RoleDashboardClient() {
       const w = r.ward || "Unassigned";
       if (!grouped[w]) grouped[w] = [];
       grouped[w].push(r);
+    });
+    return grouped;
+  }, [filteredReports]);
+
+  const reportsByCategory = useMemo(() => {
+    const grouped: Record<string, Report[]> = {};
+    filteredReports.forEach((r) => {
+      const c = r.category || "Uncategorized";
+      if (!grouped[c]) grouped[c] = [];
+      grouped[c].push(r);
+    });
+    return grouped;
+  }, [filteredReports]);
+
+  const reportsByOfficer = useMemo(() => {
+    const grouped: Record<string, Report[]> = {};
+    filteredReports.forEach((r) => {
+      const key = r.assignedOfficerId || "unassigned";
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(r);
     });
     return grouped;
   }, [filteredReports]);
@@ -850,7 +1062,7 @@ export default function RoleDashboardClient() {
   const resolved = overview?.resolvedReports ?? reports.filter((r) => r.status === "Resolved").length;
   const overdue = overview?.overdueReports ?? reports.filter((r) => {
     if (["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status)) return false;
-    const ageDays = (Date.now() - new Date(r.createdAt).getTime()) / 86400000;
+    const ageDays = (now - new Date(r.createdAt).getTime()) / 86400000;
     return ageDays > 7;
   }).length;
   const escalated = overview?.openEscalations ?? 0;
@@ -899,7 +1111,7 @@ export default function RoleDashboardClient() {
       { title: "Resolved", value: resolved, color: "text-[#187a58]" },
       { title: "Escalated", value: escalated, color: "text-[#66572f]" },
     ];
-  }, [overview, reports, role, user]);
+  }, [role, assignedToMe, escalated, open, overdue, resolutionRate, resolved, total]);
 
   const formatDate = (value: string): string => {
     if (!value || value === "Unknown date") return value || "Unknown date";
@@ -910,6 +1122,13 @@ export default function RoleDashboardClient() {
       month: "short",
       year: "numeric",
     });
+  };
+
+  const formatMonth = (value: string): string => {
+    if (!value || value === "unknown") return "Unknown period";
+    const parsed = new Date(`${value}-01T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString("en-KE", { month: "long", year: "numeric" });
   };
 
   const scopeLabel = useMemo(() => {
@@ -923,17 +1142,24 @@ export default function RoleDashboardClient() {
       role === "DEPARTMENTAL_ADMIN" ||
       role === "DISASTER_MANAGER" ||
       role === "ENFORCEMENT_OFFICER"
-    )
-      return `Department: ${DEPARTMENT_LABELS[String(user.departmentId)] || user.departmentId || "unassigned"}`;
+    ) {
+      const deptName =
+        (user.departmentId && deptNameById[String(user.departmentId)]) ||
+        DEPARTMENT_LABELS[String(user.departmentId)] ||
+        "Unassigned";
+      return `Department: ${deptName}`;
+    }
     if (role === "SUBCOUNTY_ADMIN")
-      return `Sub-County: ${user.subCountyId || "unassigned"}`;
+      return `Sub-County: ${user.subCounty || "Unassigned"}`;
     if (role === "FIELD_OFFICER" || role === "OFFICER")
-      return "Personal:";
-    return `Ward: ${user.wardId || "unassigned"}`;
-  }, [user, role]);
+      return user.ward ? `Ward: ${user.ward}` : "Personal scope";
+    return `Ward: ${user.ward || "Unassigned"}`;
+  }, [user, role, deptNameById]);
 
   const content = (
     <div className="space-y-8">
+      {isOverviewPage && (
+        <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-xl font-semibold text-[#173c32]">{roleConfig.welcome.title}</h3>
@@ -945,12 +1171,12 @@ export default function RoleDashboardClient() {
             : role === "CECM" || role === "CHIEF_OFFICER" || role === "TECHNICAL_HEAD" || role === "DISASTER_MANAGER" || role === "ENFORCEMENT_OFFICER"
               ? "border-[#55745c] text-[#55745c] bg-[#e8eee3]"
               : "border-[#687468] text-[#687468] bg-[#f0f2f1]"
-        }`}>
-          {scopeLabel}
+        }`} title={scopeLabel}>
+          <span className="block max-w-[260px] truncate">{scopeLabel}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {roleStats.map((stat) => (
           <StatCard
             key={stat.title}
@@ -960,6 +1186,8 @@ export default function RoleDashboardClient() {
           />
         ))}
       </div>
+        </>
+      )}
 
       {overviewLoading ? null : (
         <>
@@ -1267,7 +1495,7 @@ export default function RoleDashboardClient() {
                   const rate = stat.total > 0 ? Math.round((stat.resolved / stat.total) * 100) : 0;
                   return (
                     <tr key={stat.month} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
-                      <td className="p-3 font-medium text-[#173c32]">{stat.month}</td>
+                      <td className="p-3 font-medium text-[#173c32]">{formatMonth(stat.month)}</td>
                       <td className="p-3 text-[#687468]">{stat.total}</td>
                       <td className="p-3 text-[#687468]">{stat.resolved}</td>
                       <td className="p-3">
@@ -1386,7 +1614,7 @@ export default function RoleDashboardClient() {
                   const openCount = reports.filter((r) => !["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status)).length;
                   const overdueCount = reports.filter((r) => {
                     if (["Resolved", "Rejected", "Closed", "Cancelled"].includes(r.status)) return false;
-                    const ageDays = (Date.now() - new Date(r.createdAt).getTime()) / 86400000;
+                    const ageDays = (now - new Date(r.createdAt).getTime()) / 86400000;
                     return ageDays > 7;
                   }).length;
                   const escalatedCount = reports.filter((r) => r.status === "Escalated").length;
@@ -1416,11 +1644,8 @@ export default function RoleDashboardClient() {
               </p>
             </div>
           </div>
-          <div className="rounded-lg border border-[#dce2d8] bg-[#eef4f1] h-[500px] flex items-center justify-center">
-            <p className="text-[#687468] text-sm">
-              Map visualization would render here using existing county boundary
-              and report-location data from the GIS service.
-            </p>
+          <div className="overflow-hidden rounded-lg border border-[#dce2d8]">
+            <GovernmentMapLoader />
           </div>
           <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
             <div className="rounded-lg border border-[#dce2d8] p-4">
@@ -1536,54 +1761,13 @@ export default function RoleDashboardClient() {
               <p className="mt-1 text-2xl font-bold text-[#173c32]">{escalated}</p>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[950px] border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-[#dce2d8] bg-[#eff1e9] text-[#687468]">
-                  <th className="p-3 font-semibold">Report</th>
-                  <th className="p-3 font-semibold">Category</th>
-                  <th className="p-3 font-semibold">Department</th>
-                  <th className="p-3 font-semibold">Location</th>
-                  <th className="p-3 font-semibold">Status</th>
-                  <th className="p-3 font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredReports.filter((r) => r.status === "Escalated").map((report) => (
-                  <tr key={report.id} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
-                    <td className="p-3">
-                      <p className="font-medium text-[#173c32]">{report.title}</p>
-                      <p className="mt-1 text-xs text-[#7a8378]">{report.id}</p>
-                    </td>
-                    <td className="p-3 text-[#687468]">{report.category}</td>
-                    <td className="p-3 text-[#687468]">{report.department}</td>
-                    <td className="p-3 text-[#687468]">{report.location}</td>
-                    <td className="p-3">
-                      <span className="inline-block rounded-full px-3 py-1 text-xs font-semibold bg-[#f0ebd9] text-[#66572f]">
-                        Escalated
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <button
-                          type="button"
-                          onClick={() => openStatusDialog(report)}
-                          className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                        Approve Action
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {filteredReports.filter((r) => r.status === "Escalated").length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="p-3 text-center text-[#687468]">
-                      No cases requiring executive approval at this time.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <ReportsTable
+              reports={filteredReports.filter((r) => r.status === "Escalated")}
+              statusStyles={statusStyles}
+              canManage={canChangeStatus}
+              actions={{ onView: (r) => openStatusDialog(r as Report), onUpload: (r) => openWorkUpdateDialog(r as Report), onEscalate: (r) => openEscalateDialog(r as Report), onAssign: (r) => openAssignDialog(r as Report) }}
+              
+            />
         </section>
       )}
 
@@ -1689,73 +1873,13 @@ export default function RoleDashboardClient() {
           ) : filteredReports.length === 0 ? (
             <EmptyState type="reports" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[950px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#dce2d8] bg-[#eff1e9] text-[#687468]">
-                    <th className="p-3 font-semibold">Reference</th>
-                    <th className="p-3 font-semibold">Title</th>
-                    <th className="p-3 font-semibold">Category</th>
-                    <th className="p-3 font-semibold">Location</th>
-                    <th className="p-3 font-semibold">Department</th>
-                    <th className="p-3 font-semibold">Date</th>
-                    <th className="p-3 font-semibold">Status</th>
-                    <th className="p-3 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReports.map((report) => (
-                    <tr key={report.id} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
-                      <td className="p-3">
-                        <p className="font-medium text-[#173c32]">{report.title}</p>
-                        <p className="mt-1 text-xs text-[#7a8378]">{report.id}</p>
-                      </td>
-                      <td className="p-3 text-[#687468]">{report.category}</td>
-                      <td className="p-3 text-[#687468]">{report.location}</td>
-                      <td className="p-3 text-[#687468]">{report.department}</td>
-                      <td className="whitespace-nowrap p-3">{formatDate(report.date)}</td>
-                      <td className="p-3">
-                        <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[report.status]}`}>
-                          {report.status}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openStatusDialog(report)}
-                          className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          View Details
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openWorkUpdateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Upload Evidence
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEscalateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#8b392f] px-3 py-2 text-sm font-medium text-[#8b392f] transition hover:bg-[#fff3f0]"
-                        >
-                          Escalate
-                        </button>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openAssignDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Assign
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportsTable
+              reports={filteredReports}
+              statusStyles={statusStyles}
+              canManage={canChangeStatus}
+              actions={{ onView: (r) => openStatusDialog(r as Report), onUpload: (r) => openWorkUpdateDialog(r as Report), onEscalate: (r) => openEscalateDialog(r as Report), onAssign: (r) => openAssignDialog(r as Report) }}
+              extraColumn={{ header: "Date", render: (r) => formatDate(String(r.date)) }}
+            />
           )}
         </section>
       )}
@@ -1778,73 +1902,13 @@ export default function RoleDashboardClient() {
           {criticalReports.length === 0 ? (
             <EmptyState type="general" title="No critical reports" description="There are no critical reports within your jurisdiction." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[950px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#dce2d8] bg-[#eff1e9] text-[#687468]">
-                    <th className="p-3 font-semibold">Reference</th>
-                    <th className="p-3 font-semibold">Title</th>
-                    <th className="p-3 font-semibold">Category</th>
-                    <th className="p-3 font-semibold">Location</th>
-                    <th className="p-3 font-semibold">Department</th>
-                    <th className="p-3 font-semibold">Priority</th>
-                    <th className="p-3 font-semibold">Status</th>
-                    <th className="p-3 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {criticalReports.map((report) => (
-                    <tr key={report.id} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
-                      <td className="p-3">
-                        <p className="font-medium text-[#173c32]">{report.title}</p>
-                        <p className="mt-1 text-xs text-[#7a8378]">{report.id}</p>
-                      </td>
-                      <td className="p-3 text-[#687468]">{report.category}</td>
-                      <td className="p-3 text-[#687468]">{report.location}</td>
-                      <td className="p-3 text-[#687468]">{report.department}</td>
-                      <td className="p-3 text-[#687468] capitalize">{report.priority}</td>
-                      <td className="p-3">
-                        <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[report.status]}`}>
-                          {report.status}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openStatusDialog(report)}
-                          className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          View Details
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openWorkUpdateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Upload Evidence
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEscalateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#8b392f] px-3 py-2 text-sm font-medium text-[#8b392f] transition hover:bg-[#fff3f0]"
-                        >
-                          Escalate
-                        </button>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openAssignDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Assign
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportsTable
+              reports={criticalReports}
+              statusStyles={statusStyles}
+              canManage={canChangeStatus}
+              actions={{ onView: (r) => openStatusDialog(r as Report), onUpload: (r) => openWorkUpdateDialog(r as Report), onEscalate: (r) => openEscalateDialog(r as Report), onAssign: (r) => openAssignDialog(r as Report) }}
+              extraColumn={{ header: "Priority", render: (r) => <span className="capitalize">{String(r.priority || "medium").toLowerCase()}</span> }}
+            />
           )}
         </section>
       )}
@@ -1867,62 +1931,13 @@ export default function RoleDashboardClient() {
           {unresolvedReports.length === 0 ? (
             <EmptyState type="general" title="No unresolved reports" description="All reports within your jurisdiction are resolved." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[950px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#dce2d8] bg-[#eff1e9] text-[#687468]">
-                    <th className="p-3 font-semibold">Reference</th>
-                    <th className="p-3 font-semibold">Title</th>
-                    <th className="p-3 font-semibold">Category</th>
-                    <th className="p-3 font-semibold">Location</th>
-                    <th className="p-3 font-semibold">Department</th>
-                    <th className="p-3 font-semibold">Days Outstanding</th>
-                    <th className="p-3 font-semibold">Status</th>
-                    <th className="p-3 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unresolvedReports.map((report) => {
-                    const ageDays = report.createdAt
-                      ? Math.floor((Date.now() - new Date(report.createdAt).getTime()) / 86400000)
-                      : 0;
-                    return (
-                      <tr key={report.id} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
-                        <td className="p-3">
-                          <p className="font-medium text-[#173c32]">{report.title}</p>
-                          <p className="mt-1 text-xs text-[#7a8378]">{report.id}</p>
-                        </td>
-                        <td className="p-3 text-[#687468]">{report.category}</td>
-                        <td className="p-3 text-[#687468]">{report.location}</td>
-                        <td className="p-3 text-[#687468]">{report.department}</td>
-                        <td className="whitespace-nowrap p-3">{ageDays} days</td>
-                        <td className="p-3">
-                          <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[report.status]}`}>
-                            {report.status}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <button
-                          type="button"
-                          onClick={() => openStatusDialog(report)}
-                          className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                            View Details
-                          </button>
-                          <button
-                          type="button"
-                          onClick={() => openWorkUpdateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Upload Evidence
-                        </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <ReportsTable
+              reports={unresolvedReports}
+              statusStyles={statusStyles}
+              canManage={canChangeStatus}
+              actions={{ onView: (r) => openStatusDialog(r as Report), onUpload: (r) => openWorkUpdateDialog(r as Report), onEscalate: (r) => openEscalateDialog(r as Report), onAssign: (r) => openAssignDialog(r as Report) }}
+              extraColumn={{ header: "Days Outstanding", render: (r) => `${r.createdAt ? Math.floor((now - new Date(String(r.createdAt)).getTime()) / 86400000) : 0} days` }}
+            />
           )}
         </section>
       )}
@@ -1945,71 +1960,13 @@ export default function RoleDashboardClient() {
           {resolvedReports.length === 0 ? (
             <EmptyState type="general" title="No resolved reports" description="There are no resolved reports within your jurisdiction." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[950px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#dce2d8] bg-[#eff1e9] text-[#687468]">
-                    <th className="p-3 font-semibold">Reference</th>
-                    <th className="p-3 font-semibold">Title</th>
-                    <th className="p-3 font-semibold">Category</th>
-                    <th className="p-3 font-semibold">Department</th>
-                    <th className="p-3 font-semibold">Resolution Date</th>
-                    <th className="p-3 font-semibold">Status</th>
-                    <th className="p-3 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {resolvedReports.map((report) => (
-                    <tr key={report.id} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
-                      <td className="p-3">
-                        <p className="font-medium text-[#173c32]">{report.title}</p>
-                        <p className="mt-1 text-xs text-[#7a8378]">{report.id}</p>
-                      </td>
-                      <td className="p-3 text-[#687468]">{report.category}</td>
-                      <td className="p-3 text-[#687468]">{report.department}</td>
-                      <td className="whitespace-nowrap p-3">{formatDate(report.resolvedAt || report.date)}</td>
-                      <td className="p-3">
-                        <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[report.status]}`}>
-                          {report.status}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openStatusDialog(report)}
-                          className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          View Details
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openWorkUpdateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Upload Evidence
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEscalateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#8b392f] px-3 py-2 text-sm font-medium text-[#8b392f] transition hover:bg-[#fff3f0]"
-                        >
-                          Escalate
-                        </button>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openAssignDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Assign
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportsTable
+              reports={resolvedReports}
+              statusStyles={statusStyles}
+              canManage={canChangeStatus}
+              actions={{ onView: (r) => openStatusDialog(r as Report), onUpload: (r) => openWorkUpdateDialog(r as Report), onEscalate: (r) => openEscalateDialog(r as Report), onAssign: (r) => openAssignDialog(r as Report) }}
+              extraColumn={{ header: "Resolution Date", render: (r) => formatDate(String(r.resolvedAt || r.date)) }}
+            />
           )}
         </section>
       )}
@@ -2034,44 +1991,44 @@ export default function RoleDashboardClient() {
             {filteredReports.slice(0, 5).map((report) => (
               <div
                 key={report.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#dce2d8] p-4"
+                className="flex flex-col gap-3 rounded-lg border border-[#dce2d8] p-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="font-medium text-[#173c32]">{report.title}</p>
                   <p className="mt-1 text-xs text-[#687468]">
-                    {report.id} · {report.location}
+                    <span className="font-medium text-[#187a58]">{report.referenceCode || report.id}</span> · {report.location}
                   </p>
                   <p className="mt-1 text-xs text-[#7a8378]">{formatDate(report.date)}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={report.status} size="sm" />
                   {canChangeStatus && (
                     <>
                       <button
                         type="button"
                         onClick={() => openStatusDialog(report)}
-                        className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
+                        className="whitespace-nowrap rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
                       >
                         View Details
                       </button>
                       <button
                         type="button"
                         onClick={() => openWorkUpdateDialog(report)}
-                        className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
+                        className="whitespace-nowrap rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
                       >
                         Upload Evidence
                       </button>
                       <button
                         type="button"
                         onClick={() => openEscalateDialog(report)}
-                        className="ml-2 rounded-lg border border-[#8b392f] px-3 py-2 text-sm font-medium text-[#8b392f] transition hover:bg-[#fff3f0]"
+                        className="whitespace-nowrap rounded-lg border border-[#8b392f] px-3 py-2 text-sm font-medium text-[#8b392f] transition hover:bg-[#fff3f0]"
                       >
                         Escalate
                       </button>
                       <button
                         type="button"
                         onClick={() => openAssignDialog(report)}
-                        className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
+                        className="whitespace-nowrap rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
                       >
                         Assign
                       </button>
@@ -2083,7 +2040,8 @@ export default function RoleDashboardClient() {
             {filteredReports.length > 5 && (
               <button
                 type="button"
-                className="mt-4 text-sm font-semibold text-[#187a58] hover:underline"
+                onClick={() => handleNavItem(reportsNavItem)}
+                className="mt-4 inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold text-[#187a58] transition hover:bg-[#e6f3eb]"
               >
                 View all {filteredReports.length} reports
               </button>
@@ -2106,75 +2064,13 @@ export default function RoleDashboardClient() {
           ) : filteredReports.length === 0 ? (
             <EmptyState type="reports" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[950px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#dce2d8] bg-[#eff1e9] text-[#687468]">
-                    <th className="p-3 font-semibold">Report</th>
-                    <th className="p-3 font-semibold">Category</th>
-                    <th className="p-3 font-semibold">Location</th>
-                    <th className="p-3 font-semibold">Department</th>
-                    <th className="p-3 font-semibold">Date</th>
-                    <th className="p-3 font-semibold">Status</th>
-                    <th className="p-3 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReports.map((report) => (
-                    <tr
-                      key={report.id}
-                      className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]"
-                    >
-                      <td className="p-3">
-                        <p className="font-medium text-[#173c32]">{report.title}</p>
-                        <p className="mt-1 text-xs text-[#7a8378]">{report.id}</p>
-                      </td>
-                      <td className="p-3 text-[#687468]">{report.category}</td>
-                      <td className="p-3 text-[#687468]">{report.location}</td>
-                      <td className="p-3 text-[#687468]">{report.department}</td>
-                      <td className="whitespace-nowrap p-3">{formatDate(report.date)}</td>
-                      <td className="p-3">
-                        <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[report.status]}`}>
-                          {report.status}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openStatusDialog(report)}
-                          className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          View Details
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openWorkUpdateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Upload Evidence
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEscalateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#8b392f] px-3 py-2 text-sm font-medium text-[#8b392f] transition hover:bg-[#fff3f0]"
-                        >
-                          Escalate
-                        </button>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openAssignDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Assign
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportsTable
+              reports={filteredReports}
+              statusStyles={statusStyles}
+              canManage={canChangeStatus}
+              actions={{ onView: (r) => openStatusDialog(r as Report), onUpload: (r) => openWorkUpdateDialog(r as Report), onEscalate: (r) => openEscalateDialog(r as Report), onAssign: (r) => openAssignDialog(r as Report) }}
+              extraColumn={{ header: "Date", render: (r) => formatDate(String(r.date)) }}
+            />
           )}
         </section>
       )}
@@ -2606,7 +2502,7 @@ export default function RoleDashboardClient() {
                   const rate = stat.total > 0 ? Math.round((stat.resolved / stat.total) * 100) : 0;
                   return (
                     <tr key={stat.month} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
-                      <td className="p-3 font-medium text-[#173c32]">{stat.month}</td>
+                      <td className="p-3 font-medium text-[#173c32]">{formatMonth(stat.month)}</td>
                       <td className="p-3 text-[#687468]">{stat.total}</td>
                       <td className="p-3 text-[#687468]">{stat.resolved}</td>
                       <td className="p-3">
@@ -2712,11 +2608,31 @@ export default function RoleDashboardClient() {
               </p>
             </div>
           </div>
-          <div className="rounded-lg border border-[#dce2d8] p-6">
-            <p className="text-sm text-[#687468]">
-              View and manage notifications in the workspace header.
-            </p>
-          </div>
+          {notificationsLoading ? (
+            <LoadingState message="Loading notifications…" />
+          ) : notifications.length === 0 ? (
+            <EmptyState type="general" title="No notifications" description="You're all caught up. New alerts will appear here." />
+          ) : (
+            <ul className="space-y-3">
+              {notifications.map((n) => (
+                <li
+                  key={n.id}
+                  className={`flex items-start gap-3 rounded-lg border p-4 ${n.isRead ? "border-[#dce2d8] bg-white" : "border-[#bcd6c2] bg-[#f3f8f3]"}`}
+                >
+                  <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${n.isRead ? "bg-[#c4d3bf]" : "bg-[#187a58]"}`} aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-[#173c32]">{n.title}</p>
+                      {n.createdAt && (
+                        <span className="text-xs text-[#7a8378]">{formatDate(String(n.createdAt).slice(0, 10))}</span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-[#687468]">{n.message}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
 
@@ -2752,8 +2668,34 @@ export default function RoleDashboardClient() {
         </section>
       )}
 
+      {/* Generic workspace views for sidebar destinations without a dedicated
+          section. Governor keeps its own bespoke performance/monthly blocks, so
+          those tabs are excluded here for that role to avoid duplicate content. */}
+      {WORKSPACE_TABS.has(activeLower) &&
+        !(role === "GOVERNOR" && ["sub-county performance", "ward performance", "department performance", "monthly reports"].includes(activeLower)) && (
+        <WorkspaceSection
+          tab={activeLower}
+          title={activeItem}
+          role={role}
+          reports={filteredReports}
+          departments={departments}
+          officers={directoryOfficers.length > 0 ? directoryOfficers : availableOfficers}
+          users={users}
+          assignments={assignments}
+          subCounties={subCounties}
+          wards={wards}
+          auditLogs={auditLogs}
+          escalations={escalations}
+          resolutions={resolutions}
+          deptNameById={deptNameById}
+          loading={assignmentsLoading || directoryLoading || structureLoading || auditLoading}
+          now={now}
+        />
+      )}
+
       {/* Catch-all: report-related tabs without dedicated sections */}
       {!isOverviewPage &&
+        !WORKSPACE_TABS.has(activeLower) &&
         !activeLower.includes("inspection") &&
         !activeLower.includes("work update") &&
         !activeLower.includes("progress update") &&
@@ -2774,6 +2716,10 @@ export default function RoleDashboardClient() {
         !activeLower.includes("departmental reports") &&
         !activeLower.includes("exportable reports") &&
         activeLower !== "reports" &&
+        activeLower !== "all county reports" &&
+        activeLower !== "critical reports" &&
+        activeLower !== "unresolved reports" &&
+        activeLower !== "resolved reports" &&
         activeLower !== "notifications" &&
         activeLower !== "my profile" &&
         (activeLower.includes("report") ||
@@ -2796,7 +2742,7 @@ export default function RoleDashboardClient() {
             <div>
               <h3 className="text-xl font-semibold text-[#173c32]">{activeItem}</h3>
               <p className="mt-1 text-sm text-[#687468]">
-                Reports filtered by "{activeItem}" within your jurisdiction.
+                Reports filtered by &ldquo;{activeItem}&rdquo; within your jurisdiction.
               </p>
             </div>
             <div className="rounded-lg border border-[#dce2d8] p-4">
@@ -2807,71 +2753,13 @@ export default function RoleDashboardClient() {
           {filteredReports.length === 0 ? (
             <EmptyState type="reports" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[950px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#dce2d8] bg-[#eff1e9] text-[#687468]">
-                    <th className="p-3 font-semibold">Reference</th>
-                    <th className="p-3 font-semibold">Title</th>
-                    <th className="p-3 font-semibold">Category</th>
-                    <th className="p-3 font-semibold">Location</th>
-                    <th className="p-3 font-semibold">Department</th>
-                    <th className="p-3 font-semibold">Status</th>
-                    <th className="p-3 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReports.map((report) => (
-                    <tr key={report.id} className="border-b border-[#dce2d8] hover:bg-[#f5f8f5]">
-                      <td className="p-3">
-                        <p className="font-medium text-[#173c32]">{report.title}</p>
-                        <p className="mt-1 text-xs text-[#7a8378]">{report.id}</p>
-                      </td>
-                      <td className="p-3 text-[#687468]">{report.category}</td>
-                      <td className="p-3 text-[#687468]">{report.location}</td>
-                      <td className="p-3 text-[#687468]">{report.department}</td>
-                      <td className="p-3">
-                        <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[report.status]}`}>
-                          {report.status}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openStatusDialog(report)}
-                          className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          View Details
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openWorkUpdateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Upload Evidence
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEscalateDialog(report)}
-                          className="ml-2 rounded-lg border border-[#8b392f] px-3 py-2 text-sm font-medium text-[#8b392f] transition hover:bg-[#fff3f0]"
-                        >
-                          Escalate
-                        </button>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openAssignDialog(report)}
-                          className="ml-2 rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
-                        >
-                          Assign
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportsTable
+              reports={filteredReports}
+              statusStyles={statusStyles}
+              canManage={canChangeStatus}
+              actions={{ onView: (r) => openStatusDialog(r as Report), onUpload: (r) => openWorkUpdateDialog(r as Report), onEscalate: (r) => openEscalateDialog(r as Report), onAssign: (r) => openAssignDialog(r as Report) }}
+              
+            />
           )}
         </section>
       )}
@@ -2887,14 +2775,14 @@ export default function RoleDashboardClient() {
             if (e.target === e.currentTarget) closeStatusDialog();
           }}
         >
-          <div className="max-w-md w-full bg-white rounded-2xl p-6 shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-[#187a58]">{dialogReport.id}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[#187a58]">{dialogReport.referenceCode || dialogReport.id}</p>
                 <h3 id="status-change-title" className="mt-1 text-lg font-bold">
-                  Change Status
+                  Report Details
                 </h3>
-                <p className="mt-1 text-sm text-[#687468] truncate">
+                <p className="mt-1 text-sm text-[#687468]">
                   {dialogReport.title}
                 </p>
               </div>
@@ -2904,7 +2792,7 @@ export default function RoleDashboardClient() {
                 aria-label="Close dialog"
                 className="rounded-lg p-2 text-[#687468] hover:bg-[#f5f8f5] transition"
               >
-                <span className="text-[20px]">✕</span>
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
             <div className="space-y-4">
@@ -2915,6 +2803,28 @@ export default function RoleDashboardClient() {
                 <span className={`mt-1 inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[dialogReport.status]}`}>
                   {dialogReport.status}
                 </span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#e3e8e0] bg-[#f7f9f5] p-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#687468]">Category</p>
+                  <p className="mt-0.5 text-sm text-[#243329]">{dialogReport.category}{dialogReport.subCategory ? ` · ${dialogReport.subCategory}` : ""}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#687468]">Priority</p>
+                  <p className="mt-0.5 text-sm capitalize text-[#243329]">{String(dialogReport.priority || "Medium").toLowerCase()}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#687468]">Location</p>
+                  <p className="mt-0.5 text-sm text-[#243329]">{dialogReport.location}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#687468]">Department</p>
+                  <p className="mt-0.5 text-sm text-[#243329]">{(dialogReport.departmentId && deptNameById[String(dialogReport.departmentId)]) || dialogReport.department || "Unassigned"}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#687468]">Description</p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm text-[#243329]">{dialogReport.description}</p>
+                </div>
               </div>
               {canChangeStatus && (
                 <form onSubmit={handleStatusChange} className="space-y-4">
@@ -2989,7 +2899,7 @@ export default function RoleDashboardClient() {
           <div className="max-w-md w-full bg-white rounded-2xl p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-[#187a58]">{workUpdateReport.id}</p>
+                <p className="text-sm font-medium text-[#187a58]">{workUpdateReport.referenceCode || workUpdateReport.id}</p>
                 <h3 id="work-update-title" className="mt-1 text-lg font-bold">
                   Record Work Update
                 </h3>
@@ -3003,7 +2913,7 @@ export default function RoleDashboardClient() {
                 aria-label="Close dialog"
                 className="rounded-lg p-2 text-[#687468] hover:bg-[#f5f8f5] transition"
               >
-                <span className="text-[20px]">✕</span>
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
             <form onSubmit={handleWorkUpdateSubmit} className="space-y-4">
@@ -3116,7 +3026,7 @@ export default function RoleDashboardClient() {
           <div className="max-w-md w-full bg-white rounded-2xl p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-[#8b392f]">{escalateReport.id}</p>
+                <p className="text-sm font-medium text-[#8b392f]">{escalateReport.referenceCode || escalateReport.id}</p>
                 <h3 id="escalate-title" className="mt-1 text-lg font-bold">
                   Escalate Report
                 </h3>
@@ -3130,7 +3040,7 @@ export default function RoleDashboardClient() {
                 aria-label="Close dialog"
                 className="rounded-lg p-2 text-[#687468] hover:bg-[#f5f8f5] transition"
               >
-                <span className="text-[20px]">✕</span>
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
             <form onSubmit={handleEscalateSubmit} className="space-y-4">
@@ -3197,7 +3107,7 @@ export default function RoleDashboardClient() {
           <div className="max-w-md w-full bg-white rounded-2xl p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-[#173c32]">{assignReport.id}</p>
+                <p className="text-sm font-medium text-[#173c32]">{assignReport.referenceCode || assignReport.id}</p>
                 <h3 id="assign-title" className="mt-1 text-lg font-bold">
                   Assign Report
                 </h3>
@@ -3211,7 +3121,7 @@ export default function RoleDashboardClient() {
                 aria-label="Close dialog"
                 className="rounded-lg p-2 text-[#687468] hover:bg-[#f5f8f5] transition"
               >
-                <span className="text-[20px]">✕</span>
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
             <form onSubmit={handleAssignSubmit} className="space-y-4">
@@ -3271,16 +3181,82 @@ export default function RoleDashboardClient() {
         </div>
       )}
 
+      {/* Platform Admin: Deactivate / Activate confirmation */}
+      {deactivateTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deactivate-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deactivateDialogLoading) setDeactivateTarget(null);
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <h3 id="deactivate-title" className="text-lg font-bold text-[#173c32]">
+                {deactivateTarget.isActive ? "Deactivate User" : "Activate User"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDeactivateTarget(null)}
+                aria-label="Close dialog"
+                disabled={deactivateDialogLoading}
+                className="rounded-lg p-2 text-[#687468] transition hover:bg-[#f5f8f5] disabled:opacity-50"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+            <p className="text-sm leading-6 text-[#687468]">
+              {deactivateTarget.isActive
+                ? <>Are you sure you want to deactivate <span className="font-semibold text-[#173c32]">{deactivateTarget.name}</span>? They will no longer be able to sign in until reactivated.</>
+                : <>Reactivate <span className="font-semibold text-[#173c32]">{deactivateTarget.name}</span>? They will regain access to the platform.</>}
+            </p>
+            <div className="flex justify-end gap-3 pt-6">
+              <button
+                type="button"
+                onClick={() => setDeactivateTarget(null)}
+                disabled={deactivateDialogLoading}
+                className="rounded-lg border border-[#cbd6c8] px-4 py-2 text-sm font-medium text-[#687468] transition hover:bg-[#f5f8f5] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeactivateUser(deactivateTarget.id, deactivateTarget.isActive)}
+                disabled={deactivateDialogLoading}
+                className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition disabled:opacity-50 ${
+                  deactivateTarget.isActive ? "bg-[#dc2626] hover:bg-[#b91c1c]" : "bg-[#187a58] hover:bg-[#126448]"
+                }`}
+              >
+                {deactivateDialogLoading
+                  ? (deactivateTarget.isActive ? "Deactivating…" : "Activating…")
+                  : (deactivateTarget.isActive ? "Deactivate" : "Activate")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Platform Admin: All Users */}
-      {(activeLower === "all users" || activeLower === "government users") && (
+      {(activeLower === "all users" || activeLower === "government users" ||
+        activeLower === "create user" || activeLower === "edit user" || activeLower === "deactivate user") && (
         <section className="rounded-xl border border-[#dce2d8] bg-[#fdfdf9] p-6">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="text-xl font-semibold text-[#173c32]">
-                {activeLower === "all users" ? "All Users" : "Government Users"}
+                {activeItem}
               </h3>
               <p className="mt-1 text-sm text-[#687468]">
-                Manage platform users and their roles.
+                {activeLower === "create user"
+                  ? "Add a new platform user with the Create User button, or manage existing users below."
+                  : activeLower === "edit user"
+                    ? "Select a user below and choose Edit to update their details."
+                    : activeLower === "deactivate user"
+                      ? "Select a user below and choose Deactivate or Activate to change their account status."
+                      : activeLower === "government users"
+                        ? "Manage government officer accounts and their roles."
+                        : "Manage platform users and their roles."}
               </p>
             </div>
             <button
@@ -3316,33 +3292,37 @@ export default function RoleDashboardClient() {
                         <p className="font-medium text-[#173c32]">{u.name}</p>
                       </td>
                       <td className="p-3 text-[#687468]">{u.email}</td>
-                      <td className="p-3 text-[#687468]">{u.role}</td>
-                      <td className="p-3 text-[#687468]">{u.departmentId || "—"}</td>
-                      <td className="p-3 text-[#687468]">{u.wardId || "—"}</td>
+                      <td className="whitespace-nowrap p-3 text-[#687468]">{String(u.role || "").replace(/_/g, " ")}</td>
+                      <td className="p-3 text-[#687468]">
+                        {(u.departmentId && deptNameById[String(u.departmentId)]) || u.department || "—"}
+                      </td>
+                      <td className="p-3 text-[#687468]">{u.ward || "—"}</td>
                       <td className="p-3">
-                        <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${u.isActive ? "bg-[#e6f3eb] text-[#187a58]" : "bg-[#fff3f0] text-[#8b392f]"}`}>
+                        <span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${u.isActive ? "bg-[#e6f3eb] text-[#187a58]" : "bg-[#fff3f0] text-[#8b392f]"}`}>
                           {u.isActive ? "Active" : "Inactive"}
                         </span>
                       </td>
                       <td className="p-3">
-                        <button
-                          type="button"
-                          onClick={() => openEditUserDialog(u)}
-                          className="rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb] mr-2"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeactivateUser(u.id, u.isActive)}
-                          className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                            u.isActive
-                              ? "border-[#dc2626] text-[#dc2626] hover:bg-[#fef2f2]"
-                              : "border-[#187a58] text-[#187a58] hover:bg-[#e6f3eb]"
-                          }`}
-                        >
-                          {u.isActive ? "Deactivate" : "Activate"}
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEditUserDialog(u)}
+                            className="whitespace-nowrap rounded-lg border border-[#187a58] px-3 py-2 text-sm font-medium text-[#187a58] transition hover:bg-[#e6f3eb]"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeactivateTarget(u)}
+                            className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                              u.isActive
+                                ? "border-[#dc2626] text-[#dc2626] hover:bg-[#fef2f2]"
+                                : "border-[#187a58] text-[#187a58] hover:bg-[#e6f3eb]"
+                            }`}
+                          >
+                            {u.isActive ? "Deactivate" : "Activate"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -3521,7 +3501,7 @@ export default function RoleDashboardClient() {
                 aria-label="Close dialog"
                 className="rounded-lg p-2 text-[#687468] hover:bg-[#f5f8f5] transition"
               >
-                <span className="text-[20px]">✕</span>
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
             <form onSubmit={handleCreateUserSubmit} className="space-y-4">
@@ -3554,7 +3534,7 @@ export default function RoleDashboardClient() {
                   name="password"
                   type="password"
                   required
-                  minLength={6}
+                  minLength={10}
                   className="w-full px-3 py-2 border border-[#cbd6c8] rounded-lg text-sm focus:outline-none focus:border-[#187a58] bg-white"
                 />
               </div>
@@ -3639,7 +3619,7 @@ export default function RoleDashboardClient() {
                 aria-label="Close dialog"
                 className="rounded-lg p-2 text-[#687468] hover:bg-[#f5f8f5] transition"
               >
-                <span className="text-[20px]">✕</span>
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
             <form onSubmit={handleUpdateUserSubmit} className="space-y-4">
@@ -3740,11 +3720,13 @@ export default function RoleDashboardClient() {
     </div>
   );
 
+  if (!isValidRole(role)) return null;
+
   return (
     <GovernmentShell
       user={user}
       roleConfig={roleConfig}
-      pageTitle={roleConfig.welcome.title}
+      pageTitle={activeItem}
       activeItem={activeItem}
       onNavItemClick={handleNavItem}
     >

@@ -48,13 +48,13 @@ export default function AdminProfilePill({ user, onProfileClick }) {
         className="flex items-center gap-2 rounded-full border border-gray-200 hover:bg-gray-50 px-3 py-1.5 transition-colors"
         aria-label="User profile"
       >
-        <div className="flex size-6 items-center justify-center rounded-full bg-[#dce5d8] text-[#244637] text-xs font-semibold">
+        <div className="flex size-6 flex-shrink-0 items-center justify-center rounded-full bg-[#dce5d8] text-[#244637] text-xs font-semibold">
           {initials}
         </div>
-        <p className="text-sm font-medium text-[#173c32] truncate">
+        <p className="hidden max-w-[160px] truncate text-sm font-medium text-[#173c32] sm:block">
           {user?.name || "Administrator"}
         </p>
-        <ChevronDown className="w-4 h-4 text-[#687468]" />
+        <ChevronDown className="hidden w-4 h-4 text-[#687468] sm:block" />
       </button>
 
       {isOpen && (
